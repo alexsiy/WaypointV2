@@ -1,0 +1,92 @@
+- !<AssetImportMetadata/305956f0-4b29-4ef6-95d3-3adef9c85146>
+  ImportedAssetIds:
+    TypeScriptAsset: !<reference> 81a85c52-ee5c-48b6-ae89-9a406dd0ec7d
+  ImporterName: TypeScriptAssetImporter
+  PrimaryAsset: !<reference> 81a85c52-ee5c-48b6-ae89-9a406dd0ec7d
+  PackageType: NotAPackage
+  LegacyPackagePolicy: ~
+  ExtraData:
+    {}
+  AssetDataMap:
+    TypeScriptAsset: !<own> 29a39061-4d2b-4356-a4c5-baacdca9cce7
+  DependentFiles:
+    []
+  ImporterSettings: !<AssetImporterSettings>
+    {}
+  CompressionSettings: !<own> 00000000-0000-0000-0000-000000000000
+- !<TypeScriptAssetData/29a39061-4d2b-4356-a4c5-baacdca9cce7>
+  SvgIcon: ""
+  SetupScript:
+    code: ""
+  Description: ""
+  VersionMajor: 0
+  VersionMinor: 0
+  VersionPatch: 0
+  ComponentUid: 2405caf8-48e8-4770-a77a-2a6a6bb3a7f2
+  ExportUid: 00000000-0000-0000-0000-000000000000
+  PackagePolicy: CanBeUnpacked
+  ScriptInputsHidden:
+    FinishProcessCreationPanel: false
+    IntroPanel: false
+    LocationRadiusCircle: false
+    NewLocationPanel: false
+    NewProcessPanel: false
+    RunProcessPanel: false
+    SelectLocationPanel: false
+    SelectProcessPanel: false
+    addLocationBtn: false
+    allStepsCreatedBtn: false
+    finishProcessCreationBtn: false
+    newProcessBtn: false
+    nextBtn: false
+    placementController: false
+    runProcessBtn: false
+    skipToProcessBtn: false
+    startBtn: false
+  ScriptTypesHidden:
+    {}
+  ReadMe: !<reference> 00000000-0000-0000-0000-000000000000
+  DeclarationFile: !<reference> 00000000-0000-0000-0000-000000000000
+  Tags:
+    []
+  Attachments:
+    []
+  DefaultScriptInputs:
+    - IntroPanel: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
+      placementController: !<reference.ScriptComponent> 00000000-0000-0000-0000-000000000000
+      SelectLocationPanel: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
+      NewLocationPanel: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
+      SelectProcessPanel: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
+      NewProcessPanel: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
+      LocationRadiusCircle: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
+      FinishProcessCreationPanel: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
+      RunProcessPanel: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
+      startBtn: !<MappingBased.AssignableType> 00000000-0000-0000-0000-000000000000
+      addLocationBtn: !<MappingBased.AssignableType_1> 00000000-0000-0000-0000-000000000000
+      skipToProcessBtn: !<MappingBased.AssignableType_2> 00000000-0000-0000-0000-000000000000
+      nextBtn: !<MappingBased.AssignableType_3> 00000000-0000-0000-0000-000000000000
+      newProcessBtn: !<MappingBased.AssignableType_4> 00000000-0000-0000-0000-000000000000
+      allStepsCreatedBtn: !<MappingBased.AssignableType_5> 00000000-0000-0000-0000-000000000000
+      finishProcessCreationBtn: !<MappingBased.AssignableType_6> 00000000-0000-0000-0000-000000000000
+      runProcessBtn: !<MappingBased.AssignableType_7> 00000000-0000-0000-0000-000000000000
+  ScriptTypes:
+    -
+      {}
+  InputLines:
+    - // @input SceneObject IntroPanel
+    - // @input Component.ScriptComponent placementController
+    - // @input SceneObject SelectLocationPanel
+    - // @input SceneObject NewLocationPanel
+    - // @input SceneObject SelectProcessPanel
+    - // @input SceneObject NewProcessPanel
+    - // @input SceneObject LocationRadiusCircle
+    - // @input SceneObject FinishProcessCreationPanel
+    - // @input SceneObject RunProcessPanel
+    - // @input AssignableType startBtn
+    - // @input AssignableType_1 addLocationBtn
+    - // @input AssignableType_2 skipToProcessBtn
+    - // @input AssignableType_3 nextBtn
+    - // @input AssignableType_4 newProcessBtn
+    - // @input AssignableType_5 allStepsCreatedBtn
+    - // @input AssignableType_6 finishProcessCreationBtn
+    - // @input AssignableType_7 runProcessBtn

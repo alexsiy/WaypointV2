@@ -1,0 +1,37 @@
+- !<NativePackageDescriptor/b7cf2208-cd79-474e-8c7b-837b87468d43>
+  PackagePath: ""
+  StudioVersion:
+    major: 5
+    minor: 15
+    patch: 2
+    build: 25122322
+    type: Unset
+    buildFlavor: ""
+    timestamp: 0
+    commit: ""
+  Description: 3D Text Styles Fonts and 3D Text material examples Click here to learn more about Material Editor Click here to learn more about Text 3D
+  SvgIcon: ""
+  SetupScript:
+    code: ""
+  VersionMajor: 1
+  VersionMinor: 0
+  VersionPatch: 0
+  UpdateCheckpoint: 76
+  ExportUid: 1fdf93dc-dd73-4d15-ba42-e2b19ecf7be7
+  ComponentUid: da8e9fc0-d74e-4bd3-9eb2-11cfd8a3335a
+  PackagePolicy: CanBeUnpackedTransparent
+  ReadMe: !<reference> 00000000-0000-0000-0000-000000000000
+  Tags:
+    []
+  Attachments:
+    []
+  Instantiable: !<reference> 00000000-0000-0000-0000-000000000000
+  AssetLibraryDependencyStructure: !<AssetLibraryDependencyStructure>
+    Name: ""
+    AssetId: ""
+    Hash: ""
+    Version:
+      major: 0
+      minor: 0
+      patch: 0
+      build: 0
