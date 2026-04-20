@@ -28,7 +28,6 @@
   ScriptInputsHidden:
     fadeTextDuration: false
     icon: false
-    iconSpinScript: false
     liftDistance: false
     liftDuration: false
     phase1Delay: false
@@ -36,10 +35,6 @@
     phase3Delay: false
     startAutomatically: false
     startBtn: false
-    step1: false
-    step2: false
-    step3: false
-    stepInterval: false
     title: false
   ScriptTypesHidden:
     {}
@@ -52,16 +47,11 @@
   DefaultScriptInputs:
     - icon: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
       title: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
-      step1: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
-      step2: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
-      step3: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
       startBtn: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
-      iconSpinScript: !<reference.Component> 00000000-0000-0000-0000-000000000000
       startAutomatically: true
       phase1Delay: !<float> 0.000000
       phase2Delay: 0.800000
       phase3Delay: 0.600000
-      stepInterval: 0.200000
       liftDistance: !<float> 12.000000
       liftDuration: 0.500000
       fadeTextDuration: 0.500000
@@ -71,16 +61,11 @@
   InputLines:
     - // @input SceneObject icon
     - // @input SceneObject title
-    - // @input SceneObject step1
-    - // @input SceneObject step2
-    - // @input SceneObject step3
     - // @input SceneObject startBtn
-    - // @input Component.Component iconSpinScript
     - // @input bool startAutomatically = true
     - // @input float phase1Delay
     - // @input float phase2Delay = 0.8
     - // @input float phase3Delay = 0.5
-    - // @input float stepInterval = 0.2
     - // @input float liftDistance = 12
     - // @input float liftDuration = 0.5
     - // @input float fadeTextDuration = 0.4

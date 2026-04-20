@@ -5,11 +5,9 @@
  *   Phase 1 — (nothing visible)
  *   Phase 2 — Icon AND Title both fade in at their lower positions
  *   Phase 3 — Icon AND Title lift together to their final positions
- *             Steps 1, 2, 3, then Start Button appear one by one
+ *             Start Button appears
  *
  * SETUP: Place all objects at their FINAL positions in the editor, leave enabled.
- * If the icon has a Spin component, wire it into the iconSpinScript slot so the
- * lift animation can drive Spin's base position instead of fighting it.
  */
 
 @component
@@ -18,13 +16,7 @@ export class ObjectSequencer extends BaseScriptComponent {
   // ── Object slots ─────────────────────────────────────────────────────────────
   @input icon: SceneObject;
   @input title: SceneObject;
-  @input step1: SceneObject;
-  @input step2: SceneObject;
-  @input step3: SceneObject;
   @input startBtn: SceneObject;
-
-  // Wire this to the Spin ScriptComponent on the icon (if one exists)
-  @input iconSpinScript: Component;
 
   // ── Timing (seconds) ─────────────────────────────────────────────────────────
   @input startAutomatically: boolean = true;
@@ -32,7 +24,6 @@ export class ObjectSequencer extends BaseScriptComponent {
   @input phase1Delay: number = 0;
   @input phase2Delay: number = 0.8;
   @input phase3Delay: number = 0.5;
-  @input stepInterval: number = 0.2;
 
   // ── Distances ────────────────────────────────────────────────────────────────
   @input liftDistance: number = 12;
@@ -60,7 +51,7 @@ export class ObjectSequencer extends BaseScriptComponent {
   }
 
   private init() {
-    const all = [this.icon, this.title, this.step1, this.step2, this.step3, this.startBtn];
+    const all = [this.icon, this.title, this.startBtn];
 
     for (let i = 0; i < all.length; i++) {
       if (all[i]) {
@@ -121,27 +112,15 @@ export class ObjectSequencer extends BaseScriptComponent {
         p3.bind(() => {
           if (!this.isPlaying) return;
 
-          // ── Phase 3: Icon + Title lift together  +  Steps appear in sequence
+          // ── Phase 3: Icon + Title lift together, then show start button
           if (this.icon) {
-            if (this.iconSpinScript) {
-              // Tell Spin to lift its own base position — avoids transform conflict
-              (this.iconSpinScript as any).liftTo(
-                this.iconPhase2Pos.y,
-                this.iconFinalPos.y,
-                this.liftDuration
-              );
-            } else {
-              this.animateLift(this.icon, this.iconPhase2Pos, this.iconFinalPos, this.liftDuration);
-            }
+            this.animateLift(this.icon, this.iconPhase2Pos, this.iconFinalPos, this.liftDuration);
           }
           if (this.title) {
             this.animateLift(this.title, this.titlePhase2Pos, this.titleFinalPos, this.liftDuration);
           }
 
-          this.delayedShow(this.step1, 0 * this.stepInterval);
-          this.delayedShow(this.step2, 1 * this.stepInterval);
-          this.delayedShow(this.step3, 2 * this.stepInterval);
-          this.delayedShow(this.startBtn, 3 * this.stepInterval);
+          this.delayedShow(this.startBtn, 0);
 
           this.isPlaying = false;
         });
