@@ -4,7 +4,8 @@
  * Sequence:
  *   Phase 1 — (nothing visible)
  *   Phase 2 — Icon AND Title both fade in at their lower positions
- *   Phase 3 — Icon AND Title lift together to their final positions
+ *   Phase 3 — Icon spins 360 degrees on X
+ *             Icon AND Title lift together to their final positions
  *             Start Button appears
  *
  * SETUP: Place all objects at their FINAL positions in the editor, leave enabled.
@@ -31,6 +32,7 @@ export class ObjectSequencer extends BaseScriptComponent {
   // ── Animation durations (seconds) ────────────────────────────────────────────
   @input liftDuration: number = 0.5;
   @input fadeTextDuration: number = 0.4;
+  @input spinDuration: number = 0.6;
 
   // ── Internal ─────────────────────────────────────────────────────────────────
   private iconFinalPos: vec3     = new vec3(0,0,0);
@@ -112,17 +114,23 @@ export class ObjectSequencer extends BaseScriptComponent {
         p3.bind(() => {
           if (!this.isPlaying) return;
 
-          // ── Phase 3: Icon + Title lift together, then show start button
-          if (this.icon) {
-            this.animateLift(this.icon, this.iconPhase2Pos, this.iconFinalPos, this.liftDuration);
-          }
-          if (this.title) {
-            this.animateLift(this.title, this.titlePhase2Pos, this.titleFinalPos, this.liftDuration);
-          }
+          // ── Phase 3:
+          // 1) Icon spins 360 on X
+          // 2) Icon + Title lift together
+          // 3) Start button appears after lift
+          this.animateIconSpinX(this.icon, this.spinDuration, () => {
+            if (!this.isPlaying) return;
 
-          this.delayedShow(this.startBtn, 0);
+            if (this.icon) {
+              this.animateLift(this.icon, this.iconPhase2Pos, this.iconFinalPos, this.liftDuration);
+            }
+            if (this.title) {
+              this.animateLift(this.title, this.titlePhase2Pos, this.titleFinalPos, this.liftDuration);
+            }
 
-          this.isPlaying = false;
+            this.delayedShow(this.startBtn, this.liftDuration);
+            this.isPlaying = false;
+          });
         });
       });
     });
@@ -199,6 +207,26 @@ export class ObjectSequencer extends BaseScriptComponent {
       ));
     }, () => {
       obj.getTransform().setLocalPosition(to);
+    });
+  }
+
+  private animateIconSpinX(obj: SceneObject, duration: number, onComplete?: () => void) {
+    if (!obj) {
+      if (onComplete) onComplete();
+      return;
+    }
+
+    const transform = obj.getTransform();
+    const originalRotation = transform.getLocalRotation();
+
+    this.animateOverTime(duration, (t) => {
+      const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic
+      const angle = Math.PI * 2 * eased;
+      transform.setLocalRotation(quat.angleAxis(angle, vec3.forward()));
+    }, () => {
+      // Restore exact original orientation after completing full spin.
+      transform.setLocalRotation(originalRotation);
+      if (onComplete) onComplete();
     });
   }
 

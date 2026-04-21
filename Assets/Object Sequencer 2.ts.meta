@@ -33,6 +33,7 @@
     phase1Delay: false
     phase2Delay: false
     phase3Delay: false
+    spinDuration: false
     startAutomatically: false
     startBtn: false
     title: false
@@ -55,6 +56,7 @@
       liftDistance: !<float> 12.000000
       liftDuration: 0.500000
       fadeTextDuration: 0.500000
+      spinDuration: 0.600000
   ScriptTypes:
     -
       {}
@@ -69,3 +71,4 @@
     - // @input float liftDistance = 12
     - // @input float liftDuration = 0.5
     - // @input float fadeTextDuration = 0.4
+    - // @input float spinDuration = 0.6
