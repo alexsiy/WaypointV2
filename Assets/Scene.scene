@@ -8596,11 +8596,7 @@
       {}
 - !<SceneObject/40577e4e-ac24-47ce-ba8f-845e9600671d>
   PrefabRemaps:
-    - 0d6a4ce0-ff3b-44ff-81d3-79e979571896: daf83599-caa9-4bfb-6b20-9dffd87578b7
-    - 40577e4e-ac24-47ce-ba8f-845e9600671d: f88bb761-0fee-4f03-7d90-abdf3bfba544
-    - 5192f66a-9eb7-4b09-8317-c02934ea7158: fc326906-63b6-4b4d-469f-e22d1798c3a5
-    - 66fbb250-a66b-495a-a4fb-0f3319398384: 34acca99-c8e5-469b-5384-d0da8630fbea
-    - 69328f55-253e-4b41-8b11-72886ad33f80: e416bf59-dd9d-4ec3-491a-43d2e7daa5cf
+    []
   Name: processcircle
   Enabled: true
   Layers: 1
@@ -10323,6 +10319,12 @@
   ScriptAsset: !<reference> 81cdfaf2-9f7f-41a7-9e02-c118b80ea66b
   ScriptInputsDefault:
     spawnDistance: true
+    defaultTriggerRadius: true
+    defaultEntryHoldSeconds: true
+    activeScaleMultiplier: true
+    completedScaleMultiplier: true
+    panelRevealRadius: true
+    panelRevealSpeed: true
   ScriptTypesDefault:
     {}
   ScriptInputs:
@@ -10332,6 +10334,12 @@
       rotationSlider: !<reference.ScriptComponent> f52cbd95-3426-475a-ba4f-95900494adb1
       selectRotationSlider: !<reference.ScriptComponent> 0e1f8040-7400-45e2-ba33-79898a752289
       spawnDistance: !<float> 50.000000
+      defaultTriggerRadius: !<float> 55.000000
+      defaultEntryHoldSeconds: !<float> 1.000000
+      activeScaleMultiplier: 1.150000
+      completedScaleMultiplier: 0.920000
+      panelRevealRadius: !<float> 90.000000
+      panelRevealSpeed: !<float> 6.000000
       rotationPivot: !<reference.SceneObject> 7b362ddd-df52-47b1-bdb8-e458f48602e9
       lineSegmentPrefab: !<reference.ObjectPrefab> aaf1821e-b630-4af8-889e-310f73d6b13a
       lineParent: !<reference.SceneObject> 72a4cb3a-9aa3-454c-8e41-39b0c28d383e

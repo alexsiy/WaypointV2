@@ -34,7 +34,7 @@ function spawnWaypoint() {
     var forward = camTransform.forward;
     var camPos = camTransform.getWorldPosition();
 
-    var spawnPos = camPos.add(forward.uniformScale(50)); // 50cm in front
+    var spawnPos = camPos.add(forward.uniformScale(-50)); // 50cm in front
 
     spawnedWaypoint = script.waypointIconObject;
     spawnedWaypoint.enabled = true;

@@ -1,11 +1,11 @@
 - !<AssetImportMetadata/274be841-b6ef-4872-b2a9-e9a9a890e5e8>
   ImportedAssetIds:
     .hidden/Material.002: !<reference> 30f65c79-a668-4909-9b85-5756dcab52af
-    4e6c8797971782b8: !<reference> e416bf59-dd9d-4ec3-b6e5-bc2d18255a30
-    624f6792bd6e379e: !<reference> daf83599-caa9-4bfb-94df-6200278a8748
-    69608e918c36c738: !<reference> 34acca99-c8e5-469b-ac7b-2f2579cf0415
-    77ae256af7a4afff: !<reference> fc326906-63b6-4b4d-b960-1dd2e8673c5a
-    7a0dd5cd69df73fa: !<reference> f88bb761-0fee-4f03-826f-5420c4045abb
+    424a38be9076ee5f: !<reference> d542ba4a-7e99-4f4e-ba0d-e6be1fab04a8
+    4a3e924fad0e2f27: !<reference> f33fef9e-cc8d-4545-b12b-41e73b2a4e4a
+    66780cf3a4dcb2b8: !<reference> 7e38ddfc-2f0d-489d-b920-371fb4623955
+    904ad917030f68e4: !<reference> 56d1279b-0953-45e7-9ce0-6f17caa3019b
+    96f664b015fcd573: !<reference> f93944f9-9ace-4dad-9e41-e0a439b12865
     Materials/Material.002: !<reference> c7ba89ea-ea4d-4ac9-981d-7e6564658540
     Materials/Material.002|Material.002|GraphPassInfo: !<reference> 72a5198c-2e2c-40d7-a734-fbaacd317d42
     Meshes/Torus.001: !<reference> 29fc1a21-2af3-41c6-b910-6be4763a8b19
@@ -41,7 +41,12 @@
       mesh: None Compression
     Overrides:
       {}
-- !<RenderMeshVisual/34acca99-c8e5-469b-5384-d0da8630fbea>
+- !<ObjectPrefabAssetData/3bb8d395-1b12-459e-b890-6684e6f51980>
+  Prototype: !<ObjectOwner/917eabd0-93cd-4b9c-85cf-4d14868a9139>
+    PackagePath: ""
+    objects:
+      - !<own> 7e38ddfc-2f0d-489d-46df-c8e04b9dc6aa
+- !<RenderMeshVisual/56d1279b-0953-45e7-631f-90e8355cfe64>
   PrefabRemaps:
     []
   Name: Torus.001
@@ -61,42 +66,7 @@
   BlendNormals: false
   BlendShapes:
     {}
-- !<ObjectPrefabAssetData/3bb8d395-1b12-459e-b890-6684e6f51980>
-  Prototype: !<ObjectOwner/917eabd0-93cd-4b9c-85cf-4d14868a9139>
-    PackagePath: ""
-    objects:
-      - !<own> f88bb761-0fee-4f03-7d90-abdf3bfba544
-- !<SceneObject/daf83599-caa9-4bfb-6b20-9dffd87578b7>
-  PrefabRemaps:
-    []
-  Name: Scenes
-  Enabled: true
-  Layers: 1
-  LocalTransform: !<TransformEntity>
-    Position: {x: 0.000000, y: 0.000000, z: 0.000000}
-    Rotation: {x: 0.000000, y: 0.000000, z: 0.000000}
-    Scale: {x: 1.000000, y: 1.000000, z: 1.000000}
-    HasSegmentScaleCompensation: false
-  Children:
-    - !<own> e416bf59-dd9d-4ec3-491a-43d2e7daa5cf
-  Components:
-    []
-- !<SceneObject/e416bf59-dd9d-4ec3-491a-43d2e7daa5cf>
-  PrefabRemaps:
-    []
-  Name: Scene
-  Enabled: true
-  Layers: 1
-  LocalTransform: !<TransformEntity>
-    Position: {x: 0.000000, y: 0.000000, z: 0.000000}
-    Rotation: {x: 0.000000, y: 0.000000, z: 0.000000}
-    Scale: {x: 1.000000, y: 1.000000, z: 1.000000}
-    HasSegmentScaleCompensation: false
-  Children:
-    - !<own> fc326906-63b6-4b4d-469f-e22d1798c3a5
-  Components:
-    []
-- !<SceneObject/f88bb761-0fee-4f03-7d90-abdf3bfba544>
+- !<SceneObject/7e38ddfc-2f0d-489d-46df-c8e04b9dc6aa>
   PrefabRemaps:
     []
   Name: processcircle
@@ -108,10 +78,10 @@
     Scale: {x: 100.000000, y: 100.000000, z: 100.000000}
     HasSegmentScaleCompensation: false
   Children:
-    - !<own> daf83599-caa9-4bfb-6b20-9dffd87578b7
+    - !<own> f33fef9e-cc8d-4545-4ed4-be18c4d5b1b5
   Components:
     []
-- !<SceneObject/fc326906-63b6-4b4d-469f-e22d1798c3a5>
+- !<SceneObject/d542ba4a-7e99-4f4e-45f2-1941e054fb57>
   PrefabRemaps:
     []
   Name: Torus.001
@@ -125,4 +95,34 @@
   Children:
     []
   Components:
-    - !<own> 34acca99-c8e5-469b-5384-d0da8630fbea
+    - !<own> 56d1279b-0953-45e7-631f-90e8355cfe64
+- !<SceneObject/f33fef9e-cc8d-4545-4ed4-be18c4d5b1b5>
+  PrefabRemaps:
+    []
+  Name: Scenes
+  Enabled: true
+  Layers: 1
+  LocalTransform: !<TransformEntity>
+    Position: {x: 0.000000, y: 0.000000, z: 0.000000}
+    Rotation: {x: 0.000000, y: 0.000000, z: 0.000000}
+    Scale: {x: 1.000000, y: 1.000000, z: 1.000000}
+    HasSegmentScaleCompensation: false
+  Children:
+    - !<own> f93944f9-9ace-4dad-61be-1f5bc64ed79a
+  Components:
+    []
+- !<SceneObject/f93944f9-9ace-4dad-61be-1f5bc64ed79a>
+  PrefabRemaps:
+    []
+  Name: Scene
+  Enabled: true
+  Layers: 1
+  LocalTransform: !<TransformEntity>
+    Position: {x: 0.000000, y: 0.000000, z: 0.000000}
+    Rotation: {x: 0.000000, y: 0.000000, z: 0.000000}
+    Scale: {x: 1.000000, y: 1.000000, z: 1.000000}
+    HasSegmentScaleCompensation: false
+  Children:
+    - !<own> d542ba4a-7e99-4f4e-45f2-1941e054fb57
+  Components:
+    []

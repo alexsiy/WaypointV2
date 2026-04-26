@@ -284,19 +284,6 @@ export class PanelNavigator extends BaseScriptComponent {
     if (this.SelectProcessPanel) {
       this.SelectProcessPanel.enabled = true;
 
-      // call placement controller if assigned
-      if (
-        this.placementController &&
-        this.placementController.api &&
-        typeof this.placementController.api.startNewLocationPlacement ===
-          "function"
-      ) {
-        this.placementController.api.startNewLocationPlacement();
-      }
-
-      // after enabling SelectProcess panel
-      this.SelectProcessPanel.enabled = true;
-
       if (
         this.placementController &&
         this.placementController.api &&
@@ -321,7 +308,9 @@ export class PanelNavigator extends BaseScriptComponent {
 
     if (this.NewProcessPanel) {
       this.NewProcessPanel.enabled = true;
-      this.LocationRadiusCircle.enabled = true;
+      if (this.LocationRadiusCircle) {
+        this.LocationRadiusCircle.enabled = true;
+      }
       print("NewProcessPanel enabled: " + this.NewProcessPanel.enabled);
       print("NewProcessPanel name: " + this.NewProcessPanel.name);
     } else {
@@ -337,6 +326,15 @@ export class PanelNavigator extends BaseScriptComponent {
 
     if (this.RunProcessPanel) {
       this.RunProcessPanel.enabled = true;
+
+      if (
+        this.placementController &&
+        this.placementController.api &&
+        typeof this.placementController.api.startRunMode === "function"
+      ) {
+        this.placementController.api.startRunMode();
+      }
+
       print("RunProcessPanel enabled: " + this.RunProcessPanel.enabled);
       print("RunProcessPanel name: " + this.RunProcessPanel.name);
     } else {

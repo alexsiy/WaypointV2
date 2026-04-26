@@ -26,9 +26,15 @@
   ExportUid: 00000000-0000-0000-0000-000000000000
   PackagePolicy: CanBeUnpacked
   ScriptInputsHidden:
+    activeScaleMultiplier: false
     camera: false
+    completedScaleMultiplier: false
+    defaultEntryHoldSeconds: false
+    defaultTriggerRadius: false
     lineParent: false
     lineSegmentPrefab: false
+    panelRevealRadius: false
+    panelRevealSpeed: false
     rotationPivot: false
     rotationSlider: false
     selectRotationSlider: false
@@ -49,6 +55,12 @@
       rotationSlider: !<reference.ScriptComponent> 00000000-0000-0000-0000-000000000000
       selectRotationSlider: !<reference.ScriptComponent> 00000000-0000-0000-0000-000000000000
       spawnDistance: !<float> 50.000000
+      defaultTriggerRadius: !<float> 55.000000
+      defaultEntryHoldSeconds: !<float> 1.000000
+      activeScaleMultiplier: 1.150000
+      completedScaleMultiplier: 0.920000
+      panelRevealRadius: !<float> 90.000000
+      panelRevealSpeed: !<float> 6.000000
       rotationPivot: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
       lineSegmentPrefab: !<reference.ObjectPrefab> 00000000-0000-0000-0000-000000000000
       lineParent: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
