@@ -45,7 +45,7 @@ export class CircuitPathVisualizer {
 
     this.createRouteConnections(steps, activeStepIndex)
 
-    if (userPosition && activeStepIndex >= 0 && activeStepIndex < steps.length) {
+    if (userPosition && activeStepIndex === 0 && activeStepIndex < steps.length) {
       const target = this.getGuidePoint(
         steps[activeStepIndex].target.getTransform().getLocalPosition()
       )
