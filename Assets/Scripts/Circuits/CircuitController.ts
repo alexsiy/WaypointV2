@@ -93,8 +93,8 @@ export class CircuitController {
     const followText = this.followActive
       ? activeSteps.length < 2
         ? "Add one more Step+ to create a walkable path."
-        : `Following step ${Math.min(this.nextStepIndex + 1, activeSteps.length)}/${activeSteps.length}.`
-      : "Follow Path draws the route and highlights the next stop."
+        : `Walkthrough mode: step ${Math.min(this.nextStepIndex + 1, activeSteps.length)}/${activeSteps.length} is open.`
+      : "Create mode: add Step+ stops, then Follow Path plays them one at a time."
 
     return `${layerName} layer: ${countText} stops on the shared route.\n${followText}`
   }
@@ -112,6 +112,7 @@ export class CircuitController {
     this.activeCircuitIndex = index
     this.followActive = false
     this.nextStepIndex = 0
+    this.enteredStepAt = -1
     this.clearGuide()
     this.applyActiveCircuitVisibility()
     this.statusCallback(
@@ -189,8 +190,7 @@ export class CircuitController {
 
   toggleFollow(): boolean {
     if (this.followActive) {
-      this.followActive = false
-      this.clearGuide()
+      this.stopFollow()
       this.statusCallback(`Stopped following ${this.getActiveCircuitName()}.`)
       return false
     }
@@ -208,11 +208,11 @@ export class CircuitController {
     this.nextStepIndex = 0
     this.enteredStepAt = -1
     this.lastStatusAt = 0
-    this.updateGuide(steps)
+    this.applyActiveCircuitVisibility()
     this.statusCallback(
       steps.length < 2
         ? `${this.getActiveCircuitName()} has one stop.\nAdd another Step+ somewhere else to create a path.`
-        : `Go to start: step 1/${steps.length}.\nFollow the yellow guide marks, then hold at each stop.`
+        : `Walkthrough started: step 1/${steps.length} is open.\nFollow the yellow guide, then hold there or press Next Step.`
     )
     return true
   }
@@ -222,17 +222,39 @@ export class CircuitController {
     this.nextStepIndex = 0
     this.enteredStepAt = -1
     this.clearGuide()
+    this.applyActiveCircuitVisibility()
   }
 
-  update(): void {
-    if (!this.followActive) return
+  advanceFollowStep(): boolean {
+    if (!this.followActive) {
+      this.statusCallback("Start Follow Path to play the route one step at a time.")
+      return false
+    }
 
     const steps = this.getStepsForCircuit(this.getActiveCircuit().id)
     if (steps.length === 0) {
-      this.followActive = false
-      this.clearGuide()
-      this.statusCallback(`${this.getActiveCircuitName()} has no steps.`)
-      return
+      this.finishFollow(`${this.getActiveCircuitName()} has no steps.`)
+      return true
+    }
+
+    if (this.nextStepIndex >= steps.length) {
+      this.finishFollow(
+        `${this.getActiveCircuitName()} complete.\nAll step panels are visible again.`
+      )
+      return true
+    }
+
+    this.advanceFromCurrentStep(steps, "manual")
+    return true
+  }
+
+  update(): boolean {
+    if (!this.followActive) return false
+
+    const steps = this.getStepsForCircuit(this.getActiveCircuit().id)
+    if (steps.length === 0) {
+      this.finishFollow(`${this.getActiveCircuitName()} has no steps.`)
+      return true
     }
 
     if (steps.length < 2) {
@@ -243,18 +265,16 @@ export class CircuitController {
         this.statusCallback(
           `${this.getActiveCircuitName()} needs another stop.\nMove to a second location and press Step+.`
         )
+        return true
       }
-      return
+      return false
     }
 
     if (this.nextStepIndex >= steps.length) {
-      this.followActive = false
-      this.clearGuide()
-      this.statusCallback(
-        `${this.getActiveCircuitName()} complete.\n` +
-          "Switch circuits to see the same route differently."
+      this.finishFollow(
+        `${this.getActiveCircuitName()} complete.\nAll step panels are visible again.`
       )
-      return
+      return true
     }
 
     const currentStep = steps[this.nextStepIndex]
@@ -271,7 +291,7 @@ export class CircuitController {
         )
         this.updateGuide(steps)
         this.lastStatusAt = now
-        return
+        return true
       }
 
       const heldFor = (now - this.enteredStepAt) / 1000
@@ -281,20 +301,18 @@ export class CircuitController {
             `Hold at step ${this.nextStepIndex + 1}/${steps.length}.\n${Math.max(0.1, STEP_HOLD_SECONDS - heldFor).toFixed(1)}s left.`
           )
           this.lastStatusAt = now
+          return true
         }
-        return
+        return false
       }
 
-      this.statusCallback(this.buildStepReachedText(currentStep, steps.length))
-      this.nextStepIndex++
-      this.enteredStepAt = -1
-      this.updateGuide(steps)
+      this.advanceFromCurrentStep(steps, "hold")
       this.lastStatusAt = now
-      return
+      return true
     }
 
     this.enteredStepAt = -1
-    if (now - this.lastStatusAt < STATUS_UPDATE_INTERVAL_MS) return
+    if (now - this.lastStatusAt < STATUS_UPDATE_INTERVAL_MS) return false
     this.lastStatusAt = now
     this.updateGuide(steps)
 
@@ -302,23 +320,43 @@ export class CircuitController {
       `Go to step ${this.nextStepIndex + 1}/${steps.length}: ${this.getStepLabel(currentStep)}.\n` +
         `${this.formatDistance(distance)} away. ${this.describeDirection(userPos, stepPos)}`
     )
+    return true
   }
 
   applyActiveCircuitVisibility(): void {
     const activeId = this.getActiveCircuit().id
-    for (const widget of this.widgetController.getWidgets()) {
-      const note = this.asCircuitNote(widget)
-      if (!note) continue
+    const activeSteps = this.followActive ? this.getStepsForCircuit(activeId) : []
+    const activeTarget =
+      this.followActive &&
+      this.nextStepIndex >= 0 &&
+      this.nextStepIndex < activeSteps.length
+        ? activeSteps[this.nextStepIndex].target
+        : null
 
-      const meta = note.getCircuitStep()
+    for (const widget of this.widgetController.getWidgets()) {
       const target = this.widgetController.getTransformTargetForWidget(widget)
       if (!target) continue
 
-      target.enabled = !meta || meta.circuitId === activeId
+      const note = this.asCircuitNote(widget)
+      if (!note) {
+        target.enabled = !this.followActive
+        continue
+      }
+
+      const meta = note.getCircuitStep()
+      if (!meta) {
+        target.enabled = !this.followActive
+      } else if (meta.circuitId !== activeId) {
+        target.enabled = false
+      } else if (!this.followActive) {
+        target.enabled = true
+      } else {
+        target.enabled = target === activeTarget
+      }
     }
 
     if (this.followActive) {
-      this.updateGuide()
+      this.updateGuide(activeSteps)
     }
   }
 
@@ -406,19 +444,25 @@ export class CircuitController {
       directionHint
     )
 
+    const activeGuideStates = new Map<number, "upcoming" | "active" | "visited">()
+    for (let i = 0; i < activeSteps.length; i++) {
+      activeGuideStates.set(
+        activeSteps[i].widget.widgetIndex,
+        i === this.nextStepIndex
+          ? "active"
+          : i < this.nextStepIndex
+            ? "visited"
+            : "upcoming"
+      )
+    }
+
     for (const step of this.getAllCircuitSteps()) {
       if (step.meta.circuitId !== this.getActiveCircuit().id) {
         step.widget.setGuideState("none")
         continue
       }
 
-      if (step.meta.stepIndex === this.nextStepIndex) {
-        step.widget.setGuideState("active")
-      } else if (step.meta.stepIndex < this.nextStepIndex) {
-        step.widget.setGuideState("visited")
-      } else {
-        step.widget.setGuideState("upcoming")
-      }
+      step.widget.setGuideState(activeGuideStates.get(step.widget.widgetIndex) ?? "upcoming")
     }
   }
 
@@ -430,6 +474,38 @@ export class CircuitController {
         note.setGuideState("none")
       }
     }
+  }
+
+  private advanceFromCurrentStep(
+    steps: CircuitStepRuntime[],
+    source: "hold" | "manual"
+  ): void {
+    const currentStep = steps[this.nextStepIndex]
+    const reachedText = this.buildStepReachedText(currentStep, steps.length)
+
+    this.nextStepIndex++
+    this.enteredStepAt = -1
+
+    if (this.nextStepIndex >= steps.length) {
+      this.finishFollow(
+        `${reachedText}\n${source === "manual" ? "Advanced manually." : "Collected."}\nPath complete.`
+      )
+      return
+    }
+
+    this.applyActiveCircuitVisibility()
+    this.statusCallback(
+      `${reachedText}\nNow showing step ${this.nextStepIndex + 1}/${steps.length}.`
+    )
+  }
+
+  private finishFollow(message: string): void {
+    this.followActive = false
+    this.nextStepIndex = 0
+    this.enteredStepAt = -1
+    this.clearGuide()
+    this.applyActiveCircuitVisibility()
+    this.statusCallback(message)
   }
 
   private getCameraLocalPosition(): vec3 {

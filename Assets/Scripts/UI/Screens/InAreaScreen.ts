@@ -7,6 +7,8 @@ import {DEFAULT_CIRCUITS} from "../../Circuits/CircuitTypes"
 
 const INSTRUCTION_TEXT =
   "Build the walk, then layer context onto each stop."
+const FOLLOW_INSTRUCTION_TEXT =
+  "Walk the route one stop at a time. Only the current Step panel stays open."
 
 const WIDGET_TYPE_MAP: Record<string, string> = {
   "Note +": "note",
@@ -19,6 +21,8 @@ interface ButtonConfig {
   fontSize?: number
   payload?: unknown
   requiresAreaReady?: boolean
+  requiresFollowActive?: boolean
+  disabledWhenFollowing?: boolean
 }
 
 interface LayerButtonRef {
@@ -32,6 +36,8 @@ interface ManagedButtonRef {
   btn: RectangleButton
   text: Text
   requiresAreaReady: boolean
+  requiresFollowActive: boolean
+  disabledWhenFollowing: boolean
 }
 
 /**
@@ -51,12 +57,16 @@ export class InAreaScreen {
   private layerButtons: LayerButtonRef[] = []
   private followTextComp: Text | null = null
   private followButton: RectangleButton | null = null
+  private nextStepTextComp: Text | null = null
+  private nextStepButton: RectangleButton | null = null
   private followActive: boolean = false
   private localizationStatusComp: Text | null = null
   private localizationBaseText: string = "Searching for area..."
   private lastScanFrame: number = -1
   private areaReady: boolean = false
   private routeSummaryComp: Text | null = null
+  private instructionTextComp: Text | null = null
+  private selectedCircuitName: string = DEFAULT_CIRCUITS[0].name
 
   constructor(parent: SceneObject, eventBus: EventBus, logger: Logger) {
     this.eventBus = eventBus
@@ -111,13 +121,18 @@ export class InAreaScreen {
   }
 
   setCircuitName(name: string): void {
+    this.selectedCircuitName = name
     this.applyButtonAvailability()
+    this.refreshLayerButtons()
+  }
+
+  private refreshLayerButtons(): void {
     for (const layer of this.layerButtons) {
-      const active = layer.name === name
+      const active = layer.name === this.selectedCircuitName
       ;(layer.btn as any)._style = active ? "Primary" : "PrimaryNeutral"
       layer.text.text = active ? `${layer.name}\nON` : layer.name
       layer.text.size = active ? 22 : 21
-      layer.text.textFill.color = this.areaReady
+      layer.text.textFill.color = this.areaReady && !this.followActive
         ? active
           ? new vec4(1, 0.92, 0.45, 1)
           : new vec4(1, 1, 1, 0.9)
@@ -127,6 +142,9 @@ export class InAreaScreen {
 
   setFollowActive(active: boolean): void {
     this.followActive = active
+    this.updateModeCopy()
+    this.applyButtonAvailability()
+    this.refreshLayerButtons()
     if (this.followTextComp) {
       this.followTextComp.text = active ? "Stop Path" : "Follow Path"
       this.followTextComp.textFill.color = !this.areaReady
@@ -137,6 +155,16 @@ export class InAreaScreen {
     }
     if (this.followButton) {
       ;(this.followButton as any)._style = active
+        ? "Primary"
+        : "PrimaryNeutral"
+    }
+    if (this.nextStepTextComp) {
+      this.nextStepTextComp.textFill.color = !this.areaReady || !active
+        ? new vec4(0.62, 0.66, 0.7, 0.72)
+        : new vec4(1, 0.92, 0.45, 1)
+    }
+    if (this.nextStepButton) {
+      ;(this.nextStepButton as any)._style = active
         ? "Primary"
         : "PrimaryNeutral"
     }
@@ -151,6 +179,7 @@ export class InAreaScreen {
     this.areaReady = ready
     this.lastScanFrame = -1
     this.applyButtonAvailability()
+    this.refreshLayerButtons()
     this.updateLocalizationVisual(true)
   }
 
@@ -182,17 +211,17 @@ export class InAreaScreen {
   private buildInstructionText(): void {
     const textObj = global.scene.createSceneObject("InAreaInstructions")
     textObj.setParent(this.container)
-    const textComp = textObj.createComponent("Component.Text") as Text
-    textComp.text = INSTRUCTION_TEXT
-    textComp.size = 25
-    textComp.worldSpaceRect = Rect.create(-19.5, 19.5, -1.2, 1.2)
-    textComp.horizontalOverflow = HorizontalOverflow.Wrap
-    textComp.verticalOverflow = VerticalOverflow.Overflow
-    textComp.horizontalAlignment = HorizontalAlignment.Left
-    textComp.verticalAlignment = VerticalAlignment.Center
-    textComp.textFill.mode = TextFillMode.Solid
-    textComp.textFill.color = new vec4(1, 1, 1, 1)
-    textComp.renderOrder = 10
+    this.instructionTextComp = textObj.createComponent("Component.Text") as Text
+    this.instructionTextComp.text = INSTRUCTION_TEXT
+    this.instructionTextComp.size = 25
+    this.instructionTextComp.worldSpaceRect = Rect.create(-19.5, 19.5, -1.2, 1.2)
+    this.instructionTextComp.horizontalOverflow = HorizontalOverflow.Wrap
+    this.instructionTextComp.verticalOverflow = VerticalOverflow.Overflow
+    this.instructionTextComp.horizontalAlignment = HorizontalAlignment.Left
+    this.instructionTextComp.verticalAlignment = VerticalAlignment.Center
+    this.instructionTextComp.textFill.mode = TextFillMode.Solid
+    this.instructionTextComp.textFill.color = new vec4(1, 1, 1, 1)
+    this.instructionTextComp.renderOrder = 10
 
     textObj.getTransform().setLocalPosition(new vec3(0, 10.8, 2))
   }
@@ -222,6 +251,7 @@ export class InAreaScreen {
         style: "Primary",
         fontSize: 34,
         requiresAreaReady: true,
+        disabledWhenFollowing: true,
       },
       {
         label: "Note +",
@@ -229,6 +259,7 @@ export class InAreaScreen {
         style: "Primary",
         fontSize: 34,
         requiresAreaReady: true,
+        disabledWhenFollowing: true,
       },
     ]
     this.buildGridRow("PrimaryGrid", primaryButtons, new vec3(0, 3.9, 2), new vec2(20, 6.4), 2)
@@ -242,6 +273,7 @@ export class InAreaScreen {
       fontSize: 24,
       payload: {index},
       requiresAreaReady: true,
+      disabledWhenFollowing: true,
     }))
 
     this.buildGridRow("LayerGrid", layerButtons, new vec3(0, -2.45, 2), new vec2(13.2, 4.7), 3)
@@ -250,14 +282,21 @@ export class InAreaScreen {
   private buildFollowRow(): void {
     const followButtons: ButtonConfig[] = [
       {label: "Follow Path", event: "toggleCircuitFollow", fontSize: 26, requiresAreaReady: true},
+      {
+        label: "Next Step",
+        event: "advanceCircuitStep",
+        fontSize: 25,
+        requiresAreaReady: true,
+        requiresFollowActive: true,
+      },
     ]
-    this.buildGridRow("FollowGrid", followButtons, new vec3(0, -7.35, 2), new vec2(30, 4.8), 1)
+    this.buildGridRow("FollowGrid", followButtons, new vec3(0, -7.35, 2), new vec2(15.5, 4.8), 2)
   }
 
   private buildUtilityRow(): void {
     const utilityButtons: ButtonConfig[] = [
-      {label: "Gather", event: "recallWidgets", fontSize: 22, requiresAreaReady: true},
-      {label: "Snap", event: "toggleSnapToSurface", fontSize: 22, requiresAreaReady: true},
+      {label: "Gather", event: "recallWidgets", fontSize: 22, requiresAreaReady: true, disabledWhenFollowing: true},
+      {label: "Snap", event: "toggleSnapToSurface", fontSize: 22, requiresAreaReady: true, disabledWhenFollowing: true},
       {label: "Exit", event: "exitArea", fontSize: 22},
     ]
     this.buildGridRow("UtilityGrid", utilityButtons, new vec3(0, -12.4, 2), new vec2(10, 4.7), 3)
@@ -318,6 +357,11 @@ export class InAreaScreen {
         this.followButton = btn
       }
 
+      if (config.label === "Next Step") {
+        this.nextStepTextComp = textComp
+        this.nextStepButton = btn
+      }
+
       const buttonConfig = config
       btn.onTriggerUp.add(() => {
         this.logger.debug(`InArea button pressed: ${buttonConfig.label}`)
@@ -337,6 +381,8 @@ export class InAreaScreen {
         btn,
         text: textComp,
         requiresAreaReady: config.requiresAreaReady === true,
+        requiresFollowActive: config.requiresFollowActive === true,
+        disabledWhenFollowing: config.disabledWhenFollowing === true,
       })
     }
 
@@ -386,13 +432,28 @@ export class InAreaScreen {
     const enabledColor = new vec4(1, 1, 1, 1)
 
     for (const button of this.managedButtons) {
-      const locked = button.requiresAreaReady && !this.areaReady
+      const locked =
+        (button.requiresAreaReady && !this.areaReady) ||
+        (button.requiresFollowActive && !this.followActive) ||
+        (button.disabledWhenFollowing && this.followActive)
       button.btn.inactive = locked
       if (locked) {
         button.text.textFill.color = disabledColor
+      } else if (button.label === "Next Step" && this.followActive) {
+        button.text.textFill.color = new vec4(1, 0.92, 0.45, 1)
       } else if (button.label !== "Follow Path") {
         button.text.textFill.color = enabledColor
       }
     }
+  }
+
+  private updateModeCopy(): void {
+    if (!this.instructionTextComp) return
+    this.instructionTextComp.text = this.followActive
+      ? FOLLOW_INSTRUCTION_TEXT
+      : INSTRUCTION_TEXT
+    this.instructionTextComp.textFill.color = this.followActive
+      ? new vec4(1, 0.92, 0.45, 1)
+      : new vec4(1, 1, 1, 1)
   }
 }

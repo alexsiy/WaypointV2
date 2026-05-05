@@ -205,7 +205,9 @@ export class AppController extends BaseScriptComponent {
     const updateEvent = this.createEvent("UpdateEvent") as SceneEvent
     updateEvent.bind(() => {
       if (this.currentScreen === AppScreen.InArea) {
-        this.circuitController?.update()
+        if (this.circuitController?.update()) {
+          this.refreshCircuitUi()
+        }
       }
     })
 
@@ -257,6 +259,10 @@ export class AppController extends BaseScriptComponent {
 
     this.eventBus.on("toggleCircuitFollow", () => {
       this.toggleCircuitFollow()
+    })
+
+    this.eventBus.on("advanceCircuitStep", () => {
+      this.advanceCircuitStep()
     })
 
     // InAreaScreen "Recall Widgets" button
@@ -900,6 +906,17 @@ export class AppController extends BaseScriptComponent {
     }
     this.circuitController.toggleFollow()
     this.refreshCircuitUi()
+  }
+
+  private advanceCircuitStep(): void {
+    if (!this.ensureAreaReady(
+      "Still scanning this area.\nPath playback unlocks when the route anchor is ready."
+    )) {
+      return
+    }
+    if (this.circuitController.advanceFollowStep()) {
+      this.refreshCircuitUi()
+    }
   }
 
   private recallWidgets(): void {
