@@ -326,12 +326,13 @@ export class CircuitController {
   applyActiveCircuitVisibility(): void {
     const activeId = this.getActiveCircuit().id
     const activeSteps = this.followActive ? this.getStepsForCircuit(activeId) : []
-    const activeTarget =
-      this.followActive &&
-      this.nextStepIndex >= 0 &&
-      this.nextStepIndex < activeSteps.length
-        ? activeSteps[this.nextStepIndex].target
-        : null
+    const visibleFollowTargets = new Set<SceneObject>()
+    if (this.followActive) {
+      const maxVisibleIndex = Math.min(this.nextStepIndex, activeSteps.length - 1)
+      for (let i = 0; i <= maxVisibleIndex; i++) {
+        visibleFollowTargets.add(activeSteps[i].target)
+      }
+    }
 
     for (const widget of this.widgetController.getWidgets()) {
       const target = this.widgetController.getTransformTargetForWidget(widget)
@@ -351,7 +352,7 @@ export class CircuitController {
       } else if (!this.followActive) {
         target.enabled = true
       } else {
-        target.enabled = target === activeTarget
+        target.enabled = visibleFollowTargets.has(target)
       }
     }
 
