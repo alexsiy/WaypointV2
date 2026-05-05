@@ -50,7 +50,8 @@ export class CircuitPathVisualizer {
       this.createLeadInConnection(userPosition, target, activeStepIndex, directionHint)
     }
 
-    for (let i = 0; i < steps.length; i++) {
+    const maxVisibleStepIndex = Math.min(activeStepIndex, steps.length - 1)
+    for (let i = 0; i <= maxVisibleStepIndex; i++) {
       const pos = steps[i].target.getTransform().getLocalPosition()
       const state = this.getStepState(i, activeStepIndex)
       this.createStepPin(`${i + 1}`, pos, state, i, steps.length)
@@ -74,14 +75,18 @@ export class CircuitPathVisualizer {
     if (!this.root || steps.length < 2) return
 
     const allStepsVisited = activeStepIndex >= steps.length
-    const activeSegmentIndex = activeStepIndex <= 0 ? 0 : activeStepIndex - 1
+    const activeSegmentIndex = allStepsVisited
+      ? steps.length - 2
+      : activeStepIndex - 1
 
     for (let i = 0; i < steps.length - 1; i++) {
+      if (i > activeSegmentIndex) continue
+
       const start = this.getGuidePoint(steps[i].target.getTransform().getLocalPosition())
       const end = this.getGuidePoint(steps[i + 1].target.getTransform().getLocalPosition())
       const isActive = !allStepsVisited && i === activeSegmentIndex
       const isVisited = allStepsVisited || i < activeSegmentIndex
-      const color = isActive ? ACTIVE_COLOR : isVisited ? VISITED_COLOR : UPCOMING_COLOR
+      const color = isActive ? ACTIVE_COLOR : VISITED_COLOR
       const thickness = isActive ? ACTIVE_THICKNESS : ROUTE_THICKNESS
 
       this.createCurvedConnection(
