@@ -235,14 +235,6 @@ export class WidgetController {
       this.saveAllWidgets(storageCtrl, areaName)
     })
 
-    if (widget.widgetType === WidgetType.Note) {
-      this.configureNoteObjectFrameControls(
-        widget as NoteWidget,
-        storageCtrl,
-        areaName
-      )
-    }
-
     // Handle widget deletion
     widget.onDelete.add((idx: number) =>
       this.removeWidget(idx, storageCtrl, areaName)
@@ -525,6 +517,25 @@ export class WidgetController {
     objectFrame.root.enabled = visible && frameEnabled
   }
 
+  toggleObjectFrameForNote(
+    note: NoteWidget,
+    storageCtrl: StorageController,
+    areaName: string
+  ): boolean {
+    const current = note.getObjectFrameData()
+    if (current?.enabled) {
+      this.destroyObjectFrame(note.widgetIndex)
+      note.setObjectFrameData(null)
+      return false
+    }
+
+    const data = this.createDefaultObjectFrameData()
+    note.setObjectFrameData(data, false)
+    this.createObjectFrameForNote(note, data, storageCtrl, areaName)
+    note.setObjectFrameData(this.readObjectFrameData(note) ?? data)
+    return true
+  }
+
   refreshWidgetLayout(widget: WidgetBase): void {
     const frame = this.frameMap.get(widget.widgetIndex)
     if (!frame) return
@@ -546,34 +557,6 @@ export class WidgetController {
    */
   private getTransformTarget(w: WidgetBase): SceneObject {
     return this.frameObjMap.get(w.widgetIndex)
-  }
-
-  private configureNoteObjectFrameControls(
-    note: NoteWidget,
-    storageCtrl: StorageController,
-    areaName: string
-  ): void {
-    note.onObjectFrameToggle.add(() => {
-      this.toggleObjectFrameForNote(note, storageCtrl, areaName)
-    })
-  }
-
-  private toggleObjectFrameForNote(
-    note: NoteWidget,
-    storageCtrl: StorageController,
-    areaName: string
-  ): void {
-    const current = note.getObjectFrameData()
-    if (current?.enabled) {
-      this.destroyObjectFrame(note.widgetIndex)
-      note.setObjectFrameData(null)
-      return
-    }
-
-    const data = this.createDefaultObjectFrameData()
-    note.setObjectFrameData(data, false)
-    this.createObjectFrameForNote(note, data, storageCtrl, areaName)
-    note.setObjectFrameData(this.readObjectFrameData(note) ?? data)
   }
 
   private syncObjectFrameForNote(

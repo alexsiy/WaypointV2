@@ -248,6 +248,10 @@ export class AppController extends BaseScriptComponent {
       this.addCircuitStep()
     })
 
+    this.eventBus.on("toggleStepObjectFrame", () => {
+      this.toggleStepObjectFrame()
+    })
+
     this.eventBus.on("nextCircuit", () => {
       this.nextCircuit()
     })
@@ -872,6 +876,32 @@ export class AppController extends BaseScriptComponent {
 
     const added = this.circuitController.addStep(this.currentAreaName)
     if (added) {
+      this.refreshCircuitUi()
+    }
+  }
+
+  private toggleStepObjectFrame(): void {
+    if (!this.currentAreaName) {
+      this.logger.error("Cannot toggle object frame — no active area")
+      return
+    }
+
+    if (!this.ensureAreaReady(
+      "Still scanning this area.\nBox+ unlocks once the route anchor is ready."
+    )) {
+      return
+    }
+
+    if (!this.anchorController.anchor && !global.deviceInfoSystem.isEditor()) {
+      this.logger.warn("Cannot toggle object frame — anchor not saved yet")
+      this.setAreaReady(
+        false,
+        "Area is not ready yet — keep looking and moving around.\nBox+ unlocks once the anchor is saved."
+      )
+      return
+    }
+
+    if (this.circuitController.toggleObjectFrameForCurrentStep(this.currentAreaName)) {
       this.refreshCircuitUi()
     }
   }

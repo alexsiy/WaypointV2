@@ -230,7 +230,7 @@ export class InAreaScreen {
     const textObj = global.scene.createSceneObject("CircuitRouteSummary")
     textObj.setParent(this.container)
     this.routeSummaryComp = textObj.createComponent("Component.Text") as Text
-    this.routeSummaryComp.text = "Story 1: no steps yet.\nStep + marks the route. Note + leaves freeform context."
+    this.routeSummaryComp.text = "Story 1: no steps yet.\nStep + marks the route. Box+ highlights objects."
     this.routeSummaryComp.size = 25
     this.routeSummaryComp.worldSpaceRect = Rect.create(-20.5, 20.5, -1.55, 1.55)
     this.routeSummaryComp.horizontalOverflow = HorizontalOverflow.Wrap
@@ -254,6 +254,14 @@ export class InAreaScreen {
         disabledWhenFollowing: true,
       },
       {
+        label: "Box +",
+        event: "toggleStepObjectFrame",
+        style: "PrimaryNeutral",
+        fontSize: 30,
+        requiresAreaReady: true,
+        disabledWhenFollowing: true,
+      },
+      {
         label: "Note +",
         event: "spawnWidget",
         style: "Primary",
@@ -262,7 +270,7 @@ export class InAreaScreen {
         disabledWhenFollowing: true,
       },
     ]
-    this.buildGridRow("PrimaryGrid", primaryButtons, new vec3(0, 3.9, 2), new vec2(20, 6.4), 2)
+    this.buildGridRow("PrimaryGrid", primaryButtons, new vec3(0, 3.9, 2), new vec2(13.6, 6.4), 3)
   }
 
   private buildLayerRow(): void {

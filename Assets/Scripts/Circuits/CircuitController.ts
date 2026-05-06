@@ -248,6 +248,30 @@ export class CircuitController {
     return true
   }
 
+  toggleObjectFrameForCurrentStep(areaName: string): boolean {
+    const steps = this.getStepsForCircuit(this.getActiveCircuit().id)
+    if (steps.length === 0) {
+      this.statusCallback(
+        `${this.getActiveCircuitName()} has no steps yet.\nAdd Step+ first, then use Box+ to highlight an object.`
+      )
+      return false
+    }
+
+    const step = this.getObjectFrameTargetStep(steps)
+    const enabled = this.widgetController.toggleObjectFrameForNote(
+      step.widget,
+      this.storageController,
+      areaName
+    )
+    this.applyActiveCircuitVisibility()
+    this.statusCallback(
+      enabled
+        ? `Box added to step ${step.meta.stepIndex + 1}.\nMove and resize the outline around the real object.`
+        : `Box removed from step ${step.meta.stepIndex + 1}.`
+    )
+    return true
+  }
+
   update(): boolean {
     if (!this.followActive) return false
 
@@ -405,6 +429,20 @@ export class CircuitController {
       })
     }
     return steps
+  }
+
+  private getObjectFrameTargetStep(
+    steps: CircuitStepRuntime[]
+  ): CircuitStepRuntime {
+    if (
+      this.followActive &&
+      this.nextStepIndex >= 0 &&
+      this.nextStepIndex < steps.length
+    ) {
+      return steps[this.nextStepIndex]
+    }
+
+    return steps[steps.length - 1]
   }
 
   private findFirstMissingStepIndex(
