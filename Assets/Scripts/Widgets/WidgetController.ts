@@ -34,7 +34,7 @@ const WIDGET_FRAME_SIZES: Record<WidgetType, vec2> = {
 const OBJECT_FRAME_MATERIAL = requireAsset("../../Materials/WidgetSelectionUIBackground.mat") as Material
 const OBJECT_FRAME_DEFAULT_SIZE = new vec2(28, 22)
 const OBJECT_FRAME_COLOR = new vec4(1, 0.86, 0.22, 0.95)
-const OBJECT_FRAME_EDGE_THICKNESS = 1.15
+const OBJECT_FRAME_EDGE_THICKNESS = 0.65
 
 interface ObjectFrameRuntime {
   root: SceneObject
