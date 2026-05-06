@@ -198,13 +198,15 @@ export class UIController extends BaseScriptComponent {
 
     const btnObj = global.scene.createSceneObject("Btn_ShowPanel")
     btnObj.setParent(this.restoreContainer)
+    btnObj.getTransform().setLocalPosition(new vec3(0, 0, 2.8))
 
     const btn = btnObj.createComponent(RectangleButton.getTypeName()) as RectangleButton
     ;(btn as any)._style = "Primary"
     btn.size = new vec3(13.5, 3.6, 1)
     btn.renderOrder = 12
     btn.initialize()
-    addButtonLabel(btnObj, "Show Panel", 13.5, 3.6, 24)
+    const label = addButtonLabel(btnObj, "Show Panel", 13.5, 3.6, 24)
+    label.renderOrder = 14
     btn.onTriggerUp.add(() => {
       this.eventBus.emit("toggleMainPanelMinimized")
     })

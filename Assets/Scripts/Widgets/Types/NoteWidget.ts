@@ -13,7 +13,9 @@ interface NoteData {
 
 const NOTE_MIN_SIZE = new vec2(15, 9.5)
 const NOTE_MAX_SIZE = new vec2(32, 26)
-const NOTE_MINIMIZED_SIZE = new vec2(11.5, 5.4)
+const NOTE_MINIMIZED_SIZE = new vec2(8.8, 4.4)
+const NOTE_MINIMIZE_BUTTON_SIZE = new vec2(2.8, 2.4)
+const NOTE_RESTORE_BUTTON_SIZE = new vec2(7.2, 3)
 
 /**
  * Note Widget — sticky note with editable text.
@@ -51,6 +53,7 @@ export class NoteWidget extends WidgetBase {
   private inputField: TextInputField | null = null
   private guideState: "none" | "upcoming" | "active" | "visited" = "none"
   private minimized: boolean = false
+  private minimizeButton: RectangleButton | null = null
   private minimizeButtonObject: SceneObject | null = null
   private minimizeButtonText: Text | null = null
 
@@ -191,26 +194,23 @@ export class NoteWidget extends WidgetBase {
 
   private applyTextStyle(frameSize: vec2): void {
     if (!this.textComponent) return
+    ;(this.textComponent as any).enabled = !this.minimized
+    if (this.minimized) return
+
     const halfW = frameSize.x * 0.5
     const halfH = frameSize.y * 0.5
-    this.textComponent.text = this.getDisplayText()
-    this.textComponent.size = this.minimized ? 26 : this.getResponsiveTextSize()
-    this.textComponent.worldSpaceRect = this.minimized
-      ? Rect.create(-halfW + 0.9, halfW - 3.3, -halfH + 0.75, halfH - 0.75)
-      : Rect.create(
-          -halfW + 1.15,
-          halfW - 1.15,
-          -halfH + 1.15,
-          halfH - 4.6
-        )
+    this.textComponent.text = this.noteText
+    this.textComponent.size = this.getResponsiveTextSize()
+    this.textComponent.worldSpaceRect = Rect.create(
+      -halfW + 1.15,
+      halfW - 1.15,
+      -halfH + 1.15,
+      halfH - 4.6
+    )
     this.textComponent.horizontalOverflow = HorizontalOverflow.Wrap
     this.textComponent.verticalOverflow = VerticalOverflow.Shrink
-    this.textComponent.horizontalAlignment = this.minimized
-      ? HorizontalAlignment.Center
-      : HorizontalAlignment.Left
-    this.textComponent.verticalAlignment = this.minimized
-      ? VerticalAlignment.Center
-      : VerticalAlignment.Top
+    this.textComponent.horizontalAlignment = HorizontalAlignment.Left
+    this.textComponent.verticalAlignment = VerticalAlignment.Top
     this.textComponent.textFill.mode = TextFillMode.Solid
     this.applyTextColor()
     this.textComponent.renderOrder = 10
@@ -248,19 +248,24 @@ export class NoteWidget extends WidgetBase {
     this.minimizeButtonObject = global.scene.createSceneObject("NoteMinimizeButton")
     this.minimizeButtonObject.setParent(this.getSceneObject())
 
-    const btn = this.minimizeButtonObject.createComponent(RectangleButton.getTypeName()) as RectangleButton
-    ;(btn as any)._style = "PrimaryNeutral"
-    btn.size = new vec3(2.8, 2.4, 1)
-    btn.renderOrder = 12
-    btn.initialize()
+    this.minimizeButton = this.minimizeButtonObject.createComponent(RectangleButton.getTypeName()) as RectangleButton
+    ;(this.minimizeButton as any)._style = "PrimaryNeutral"
+    this.minimizeButton.size = new vec3(
+      NOTE_MINIMIZE_BUTTON_SIZE.x,
+      NOTE_MINIMIZE_BUTTON_SIZE.y,
+      1
+    )
+    this.minimizeButton.renderOrder = 14
+    this.minimizeButton.initialize()
     this.minimizeButtonText = addButtonLabel(
       this.minimizeButtonObject,
-      this.minimized ? "+" : "-",
-      2.8,
-      2.4,
+      this.getMinimizedButtonLabel(),
+      NOTE_MINIMIZE_BUTTON_SIZE.x,
+      NOTE_MINIMIZE_BUTTON_SIZE.y,
       22
     )
-    btn.onTriggerUp.add(() => {
+    this.minimizeButtonText.renderOrder = 15
+    this.minimizeButton.onTriggerUp.add(() => {
       this.minimized = !this.minimized
       this.applyResponsiveLayout()
       this.emitContentChange()
@@ -270,16 +275,39 @@ export class NoteWidget extends WidgetBase {
   private applyMinimizeButtonStyle(frameSize: vec2): void {
     if (!this.minimizeButtonObject) return
 
+    const buttonSize = this.minimized
+      ? NOTE_RESTORE_BUTTON_SIZE
+      : NOTE_MINIMIZE_BUTTON_SIZE
+
+    if (this.minimizeButton) {
+      this.minimizeButton.size = new vec3(buttonSize.x, buttonSize.y, 1)
+      ;(this.minimizeButton as any)._style = this.minimized
+        ? "Primary"
+        : "PrimaryNeutral"
+    }
+
     if (this.minimizeButtonText) {
-      this.minimizeButtonText.text = this.minimized ? "+" : "-"
+      this.minimizeButtonText.text = this.minimized
+        ? this.getMinimizedButtonLabel()
+        : "-"
+      this.minimizeButtonText.size = this.minimized ? 19 : 22
+      const halfW = buttonSize.x / 2 - 0.45
+      const halfH = buttonSize.y / 2 - 0.35
+      this.minimizeButtonText.worldSpaceRect = Rect.create(
+        -halfW,
+        halfW,
+        -halfH,
+        halfH
+      )
       this.minimizeButtonText.textFill.color = this.minimized
         ? new vec4(1, 0.92, 0.45, 1)
         : new vec4(1, 1, 1, 0.95)
     }
 
-    this.minimizeButtonObject.getTransform().setLocalPosition(
-      new vec3(frameSize.x * 0.5 - 1.85, frameSize.y * 0.5 - 1.55, 0.16)
-    )
+    const position = this.minimized
+      ? new vec3(0, 0, 1.1)
+      : new vec3(frameSize.x * 0.5 - 1.85, frameSize.y * 0.5 - 1.55, 0.55)
+    this.minimizeButtonObject.getTransform().setLocalPosition(position)
   }
 
   private applyTextColor(): void {
@@ -309,6 +337,13 @@ export class NoteWidget extends WidgetBase {
       return `Step ${this.circuitStep.stepIndex + 1}`
     }
 
+    return "Note"
+  }
+
+  private getMinimizedButtonLabel(): string {
+    if (this.circuitStep) {
+      return `Step ${this.circuitStep.stepIndex + 1}`
+    }
     return "Note"
   }
 
