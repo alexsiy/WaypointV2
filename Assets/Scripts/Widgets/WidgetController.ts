@@ -31,12 +31,16 @@ const WIDGET_FRAME_SIZES: Record<WidgetType, vec2> = {
   [WidgetType.Photo]: new vec2(14, 14),
 }
 
+const OBJECT_FRAME_MATERIAL = requireAsset("../../Materials/WidgetSelectionUIBackground.mat") as Material
 const OBJECT_FRAME_DEFAULT_SIZE = new vec2(28, 22)
 const OBJECT_FRAME_COLOR = new vec4(1, 0.86, 0.22, 0.95)
+const OBJECT_FRAME_EDGE_THICKNESS = 1.15
 
 interface ObjectFrameRuntime {
   root: SceneObject
   frame: Frame
+  outlineRoot: SceneObject
+  edges: SceneObject[]
 }
 
 export class WidgetController {
@@ -626,20 +630,42 @@ export class WidgetController {
     frame.cutOutCenter = true
     frame.border = 3
     frame.renderOrder = 18
-    frame.showVisual()
-    frame.roundedRectangle.borderColor = OBJECT_FRAME_COLOR
+    frame.roundedRectangle.renderMeshVisual.enabled = false
 
     frame.onTranslationEnd.add(() => {
       this.persistObjectFrameState(note, storageCtrl, areaName)
     })
+    frame.onScalingUpdate.add(() => {
+      const runtime = this.objectFrameMap.get(note.widgetIndex)
+      if (runtime) {
+        this.hideNativeObjectFrameVisual(runtime.frame)
+        this.updateObjectFrameOutline(runtime)
+      }
+    })
     frame.onScalingEnd.add(() => {
+      const runtime = this.objectFrameMap.get(note.widgetIndex)
+      if (runtime) {
+        this.hideNativeObjectFrameVisual(runtime.frame)
+        this.updateObjectFrameOutline(runtime)
+      }
       this.persistObjectFrameState(note, storageCtrl, areaName)
     })
     frame.onSnappingComplete.add(() => {
       this.persistObjectFrameState(note, storageCtrl, areaName)
     })
 
-    this.objectFrameMap.set(note.widgetIndex, {root, frame})
+    const outlineRoot = global.scene.createSceneObject(`ObjectFrameOutline_${note.widgetIndex}`)
+    outlineRoot.setParent(root)
+    outlineRoot.getTransform().setLocalPosition(new vec3(0, 0, 0.85))
+    const runtime = {
+      root,
+      frame,
+      outlineRoot,
+      edges: this.createObjectFrameEdges(outlineRoot),
+    }
+    this.objectFrameMap.set(note.widgetIndex, runtime)
+    this.hideNativeObjectFrameVisual(frame)
+    this.updateObjectFrameOutline(runtime)
   }
 
   private persistObjectFrameState(
@@ -700,6 +726,85 @@ export class WidgetController {
     if (!objectFrame) return
     objectFrame.root.destroy()
     this.objectFrameMap.delete(widgetIndex)
+  }
+
+  private hideNativeObjectFrameVisual(frame: Frame): void {
+    try {
+      frame.roundedRectangle.renderMeshVisual.enabled = false
+    } catch (_) {}
+  }
+
+  private createObjectFrameEdges(parent: SceneObject): SceneObject[] {
+    const names = ["Top", "Bottom", "Left", "Right"]
+    return names.map((name) => {
+      const edge = global.scene.createSceneObject(`ObjectFrameEdge_${name}`)
+      edge.setParent(parent)
+
+      const visual = edge.createComponent("Component.RenderMeshVisual") as RenderMeshVisual
+      visual.mesh = this.createQuadMesh()
+      visual.mainMaterial = OBJECT_FRAME_MATERIAL.clone()
+      visual.mainMaterial.mainPass.baseColor = OBJECT_FRAME_COLOR
+      visual.mainMaterial.mainPass.depthTest = false
+      visual.mainMaterial.mainPass.twoSided = true
+      visual.setRenderOrder(22)
+      return edge
+    })
+  }
+
+  private updateObjectFrameOutline(runtime: ObjectFrameRuntime): void {
+    const width = Math.max(8, runtime.frame.innerSize.x)
+    const height = Math.max(8, runtime.frame.innerSize.y)
+    const thickness = OBJECT_FRAME_EDGE_THICKNESS
+    const [top, bottom, left, right] = runtime.edges
+
+    this.layoutObjectFrameEdge(
+      top,
+      new vec3(0, height * 0.5, 0),
+      new vec3(width + thickness, thickness, 1)
+    )
+    this.layoutObjectFrameEdge(
+      bottom,
+      new vec3(0, -height * 0.5, 0),
+      new vec3(width + thickness, thickness, 1)
+    )
+    this.layoutObjectFrameEdge(
+      left,
+      new vec3(-width * 0.5, 0, 0),
+      new vec3(thickness, height + thickness, 1)
+    )
+    this.layoutObjectFrameEdge(
+      right,
+      new vec3(width * 0.5, 0, 0),
+      new vec3(thickness, height + thickness, 1)
+    )
+  }
+
+  private layoutObjectFrameEdge(
+    edge: SceneObject,
+    position: vec3,
+    scale: vec3
+  ): void {
+    const transform = edge.getTransform()
+    transform.setLocalPosition(position)
+    transform.setLocalScale(scale)
+  }
+
+  private createQuadMesh(): RenderMesh {
+    const builder = new MeshBuilder([
+      {name: "position", components: 3},
+      {name: "normal", components: 3},
+    ])
+    builder.topology = MeshTopology.Triangles
+    builder.indexType = MeshIndexType.UInt16
+    builder.appendVerticesInterleaved([
+      -0.5, -0.5, 0, 0, 0, 1,
+      0.5, -0.5, 0, 0, 0, 1,
+      0.5, 0.5, 0, 0, 0, 1,
+      -0.5, 0.5, 0, 0, 0, 1,
+    ])
+    builder.appendIndices([0, 1, 2, 0, 2, 3])
+    builder.updateMesh()
+    return builder.getMesh()
   }
 
   private vec3ToData(value: vec3): {x: number; y: number; z: number} {
