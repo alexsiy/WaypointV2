@@ -1,8 +1,10 @@
 import {Frame} from "SpectaclesUIKit.lspkg/Scripts/Components/Frame/Frame"
+import {RectangleButton} from "SpectaclesUIKit.lspkg/Scripts/Components/Button/RectangleButton"
 import animate, {CancelSet} from "SpectaclesInteractionKit.lspkg/Utils/animate"
 import {Logger} from "Utilities.lspkg/Scripts/Utils/Logger"
 import {EventBus} from "../Shared/EventBus"
 import {AppScreen} from "../App/AppState"
+import {addButtonLabel} from "../Shared/ButtonTextHelper"
 
 // Re-export so downstream UI files can import from UIController
 export {AppScreen}
@@ -13,10 +15,11 @@ const SCREEN_SIZES: Record<AppScreen, vec2> = {
   [AppScreen.Capture]: new vec2(33, 20),
   [AppScreen.InCapture]: new vec2(33, 20),
   [AppScreen.MyAreas]: new vec2(33, 25),
-  [AppScreen.InArea]: new vec2(42, 31),
+  [AppScreen.InArea]: new vec2(44, 34),
 }
 
 const TRANSITION_DURATION = 0.4
+const MINIMIZED_PANEL_SIZE = new vec2(16, 5.2)
 
 @component
 export class UIController extends BaseScriptComponent {
@@ -43,6 +46,8 @@ export class UIController extends BaseScriptComponent {
   private cancelSet: CancelSet = new CancelSet()
   private currentScreen: AppScreen | null = null
   private screenContainers: Map<AppScreen, SceneObject> = new Map()
+  private restoreContainer: SceneObject | null = null
+  private minimized: boolean = false
   private initialized: boolean = false
 
   // ── Lifecycle ──────────────────────────────────────────────
@@ -67,6 +72,7 @@ export class UIController extends BaseScriptComponent {
     this.rootContainer = rootContainer
     this.createFrame()
     this.createScreenContainers()
+    this.createRestoreControl()
     this.initialized = true
     this.logger.debug("Initialized")
   }
@@ -89,6 +95,10 @@ export class UIController extends BaseScriptComponent {
     }
     if (screen === this.currentScreen) return
 
+    if (this.minimized && screen !== AppScreen.InArea) {
+      this.setPanelMinimized(false)
+    }
+
     const previous = this.currentScreen
     this.logger.debug(`Transition: ${previous ?? "none"} → ${screen}`)
 
@@ -103,7 +113,7 @@ export class UIController extends BaseScriptComponent {
     if (targetContainer) targetContainer.enabled = true
 
     // Animate Frame size
-    this.animateToSize(SCREEN_SIZES[screen])
+    this.animateToSize(this.minimized ? MINIMIZED_PANEL_SIZE : SCREEN_SIZES[screen])
 
     this.currentScreen = screen
     this.eventBus.emit("screenChanged", screen)
@@ -111,6 +121,32 @@ export class UIController extends BaseScriptComponent {
 
   getCurrentScreen(): AppScreen | null {
     return this.currentScreen
+  }
+
+  setPanelMinimized(minimized: boolean): void {
+    if (!this.initialized || this.minimized === minimized) return
+
+    this.minimized = minimized
+    const currentContainer = this.currentScreen !== null
+      ? this.screenContainers.get(this.currentScreen)
+      : undefined
+
+    if (currentContainer) {
+      currentContainer.enabled = !minimized
+    }
+
+    if (this.restoreContainer) {
+      this.restoreContainer.enabled = minimized
+    }
+
+    const expandedSize = this.currentScreen !== null
+      ? SCREEN_SIZES[this.currentScreen]
+      : SCREEN_SIZES[AppScreen.GetStarted]
+    this.animateToSize(minimized ? MINIMIZED_PANEL_SIZE : expandedSize)
+  }
+
+  isPanelMinimized(): boolean {
+    return this.minimized
   }
 
   // ── Internal ───────────────────────────────────────────────
@@ -153,6 +189,25 @@ export class UIController extends BaseScriptComponent {
       this.screenContainers.set(screen as AppScreen, container)
     }
     this.logger.debug(`Created ${this.screenContainers.size} screen containers`)
+  }
+
+  private createRestoreControl(): void {
+    this.restoreContainer = global.scene.createSceneObject("MinimizedPanelControl")
+    this.restoreContainer.setParent(this.frameObj)
+    this.restoreContainer.enabled = false
+
+    const btnObj = global.scene.createSceneObject("Btn_ShowPanel")
+    btnObj.setParent(this.restoreContainer)
+
+    const btn = btnObj.createComponent(RectangleButton.getTypeName()) as RectangleButton
+    ;(btn as any)._style = "Primary"
+    btn.size = new vec3(13.5, 3.6, 1)
+    btn.renderOrder = 12
+    btn.initialize()
+    addButtonLabel(btnObj, "Show Panel", 13.5, 3.6, 24)
+    btn.onTriggerUp.add(() => {
+      this.eventBus.emit("toggleMainPanelMinimized")
+    })
   }
 
   private animateToSize(targetSize: vec2): void {

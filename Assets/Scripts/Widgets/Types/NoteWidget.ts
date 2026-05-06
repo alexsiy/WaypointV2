@@ -1,15 +1,19 @@
 import {TextInputField} from "SpectaclesUIKit.lspkg/Scripts/Components/TextInputField/TextInputField"
+import {RectangleButton} from "SpectaclesUIKit.lspkg/Scripts/Components/Button/RectangleButton"
 import {Logger} from "Utilities.lspkg/Scripts/Utils/Logger"
 import {WidgetBase} from "../WidgetBase"
 import {CircuitStepMeta} from "../../Circuits/CircuitTypes"
+import {addButtonLabel} from "../../Shared/ButtonTextHelper"
 
 interface NoteData {
   text: string
   circuit?: CircuitStepMeta
+  minimized?: boolean
 }
 
 const NOTE_MIN_SIZE = new vec2(15, 9.5)
 const NOTE_MAX_SIZE = new vec2(32, 26)
+const NOTE_MINIMIZED_SIZE = new vec2(11.5, 5.4)
 
 /**
  * Note Widget — sticky note with editable text.
@@ -46,6 +50,9 @@ export class NoteWidget extends WidgetBase {
   private circuitStep: CircuitStepMeta | null = null
   private inputField: TextInputField | null = null
   private guideState: "none" | "upcoming" | "active" | "visited" = "none"
+  private minimized: boolean = false
+  private minimizeButtonObject: SceneObject | null = null
+  private minimizeButtonText: Text | null = null
 
   onAwake(): void {
     super.onAwake()
@@ -55,8 +62,10 @@ export class NoteWidget extends WidgetBase {
       true
     )
 
+    this.buildMinimizeButton()
+
     if (this.textComponent) {
-      this.textComponent.text = this.noteText
+      this.textComponent.text = this.getDisplayText()
       this.applyResponsiveLayout()
     }
 
@@ -84,7 +93,7 @@ export class NoteWidget extends WidgetBase {
       this.inputField.onTextChanged.add((text: string) => {
         this.noteText = text
         if (this.textComponent) {
-          this.textComponent.text = text
+          this.textComponent.text = this.getDisplayText()
         }
         this.applyResponsiveLayout()
         this.emitContentChange()
@@ -95,7 +104,10 @@ export class NoteWidget extends WidgetBase {
   }
 
   get serializedContent(): string {
-    const data: NoteData = {text: this.noteText}
+    const data: NoteData = {
+      text: this.noteText,
+      minimized: this.minimized,
+    }
     if (this.circuitStep) {
       data.circuit = this.circuitStep
     }
@@ -107,8 +119,9 @@ export class NoteWidget extends WidgetBase {
       const data: NoteData = JSON.parse(value)
       this.noteText = data.text ?? ""
       this.circuitStep = data.circuit ?? null
+      this.minimized = data.minimized === true
       if (this.textComponent) {
-        this.textComponent.text = this.noteText
+        this.textComponent.text = this.getDisplayText()
         this.applyResponsiveLayout()
       }
       if (this.inputField) {
@@ -122,7 +135,7 @@ export class NoteWidget extends WidgetBase {
   setText(text: string): void {
     this.noteText = text
     if (this.textComponent) {
-      this.textComponent.text = text
+      this.textComponent.text = this.getDisplayText()
     }
     this.applyResponsiveLayout()
     this.emitContentChange()
@@ -149,6 +162,7 @@ export class NoteWidget extends WidgetBase {
     const size = frameSize ?? this.getDesiredFrameSize()
     this.applyTextStyle(size)
     this.applyInputStyle(size)
+    this.applyMinimizeButtonStyle(size)
   }
 
   setGuideState(state: "none" | "upcoming" | "active" | "visited"): void {
@@ -157,6 +171,10 @@ export class NoteWidget extends WidgetBase {
   }
 
   getDesiredFrameSize(): vec2 {
+    if (this.minimized) {
+      return NOTE_MINIMIZED_SIZE
+    }
+
     const text = this.noteText.trim()
     const length = text.length
     const width = this.clamp(15 + length * 0.1, NOTE_MIN_SIZE.x, NOTE_MAX_SIZE.x)
@@ -175,17 +193,24 @@ export class NoteWidget extends WidgetBase {
     if (!this.textComponent) return
     const halfW = frameSize.x * 0.5
     const halfH = frameSize.y * 0.5
-    this.textComponent.size = this.getResponsiveTextSize()
-    this.textComponent.worldSpaceRect = Rect.create(
-      -halfW + 1.15,
-      halfW - 1.15,
-      -halfH + 1.15,
-      halfH - 4.6
-    )
+    this.textComponent.text = this.getDisplayText()
+    this.textComponent.size = this.minimized ? 26 : this.getResponsiveTextSize()
+    this.textComponent.worldSpaceRect = this.minimized
+      ? Rect.create(-halfW + 0.9, halfW - 3.3, -halfH + 0.75, halfH - 0.75)
+      : Rect.create(
+          -halfW + 1.15,
+          halfW - 1.15,
+          -halfH + 1.15,
+          halfH - 4.6
+        )
     this.textComponent.horizontalOverflow = HorizontalOverflow.Wrap
     this.textComponent.verticalOverflow = VerticalOverflow.Shrink
-    this.textComponent.horizontalAlignment = HorizontalAlignment.Left
-    this.textComponent.verticalAlignment = VerticalAlignment.Top
+    this.textComponent.horizontalAlignment = this.minimized
+      ? HorizontalAlignment.Center
+      : HorizontalAlignment.Left
+    this.textComponent.verticalAlignment = this.minimized
+      ? VerticalAlignment.Center
+      : VerticalAlignment.Top
     this.textComponent.textFill.mode = TextFillMode.Solid
     this.applyTextColor()
     this.textComponent.renderOrder = 10
@@ -202,16 +227,59 @@ export class NoteWidget extends WidgetBase {
     }
 
     if (!this.inputField) return
-    const inputWidth = Math.max(13, frameSize.x - 3)
+    const inputWidth = Math.max(9, frameSize.x - 7)
     this.inputField.size = new vec3(inputWidth, 3.1, 1)
     this.inputField.placeholderText = ""
     this.inputField.fontSize = 24
-
     if (this.inputFieldObject) {
+      this.inputFieldObject.enabled = !this.minimized
+    }
+
+    if (this.inputFieldObject && !this.minimized) {
       this.inputFieldObject.getTransform().setLocalPosition(
-        new vec3(0, frameSize.y * 0.5 - 2.1, 0.12)
+        new vec3(-2, frameSize.y * 0.5 - 2.1, 0.12)
       )
     }
+  }
+
+  private buildMinimizeButton(): void {
+    if (this.minimizeButtonObject) return
+
+    this.minimizeButtonObject = global.scene.createSceneObject("NoteMinimizeButton")
+    this.minimizeButtonObject.setParent(this.getSceneObject())
+
+    const btn = this.minimizeButtonObject.createComponent(RectangleButton.getTypeName()) as RectangleButton
+    ;(btn as any)._style = "PrimaryNeutral"
+    btn.size = new vec3(2.8, 2.4, 1)
+    btn.renderOrder = 12
+    btn.initialize()
+    this.minimizeButtonText = addButtonLabel(
+      this.minimizeButtonObject,
+      this.minimized ? "+" : "-",
+      2.8,
+      2.4,
+      22
+    )
+    btn.onTriggerUp.add(() => {
+      this.minimized = !this.minimized
+      this.applyResponsiveLayout()
+      this.emitContentChange()
+    })
+  }
+
+  private applyMinimizeButtonStyle(frameSize: vec2): void {
+    if (!this.minimizeButtonObject) return
+
+    if (this.minimizeButtonText) {
+      this.minimizeButtonText.text = this.minimized ? "+" : "-"
+      this.minimizeButtonText.textFill.color = this.minimized
+        ? new vec4(1, 0.92, 0.45, 1)
+        : new vec4(1, 1, 1, 0.95)
+    }
+
+    this.minimizeButtonObject.getTransform().setLocalPosition(
+      new vec3(frameSize.x * 0.5 - 1.85, frameSize.y * 0.5 - 1.55, 0.16)
+    )
   }
 
   private applyTextColor(): void {
@@ -224,6 +292,24 @@ export class NoteWidget extends WidgetBase {
     } else {
       this.textComponent.textFill.color = new vec4(1, 1, 1, 1)
     }
+  }
+
+  private getDisplayText(): string {
+    if (!this.minimized) {
+      return this.noteText
+    }
+
+    const trimmed = this.noteText.trim()
+    if (trimmed.length > 0) {
+      const firstLine = trimmed.split("\n")[0]
+      return firstLine.length > 18 ? `${firstLine.substring(0, 17)}...` : firstLine
+    }
+
+    if (this.circuitStep) {
+      return `Step ${this.circuitStep.stepIndex + 1}`
+    }
+
+    return "Note"
   }
 
   private getResponsiveTextSize(): number {

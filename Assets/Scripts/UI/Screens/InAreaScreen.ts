@@ -6,9 +6,9 @@ import {addButtonLabel} from "../../Shared/ButtonTextHelper"
 import {DEFAULT_CIRCUITS} from "../../Circuits/CircuitTypes"
 
 const INSTRUCTION_TEXT =
-  "Build the walk, then layer context onto each stop."
+  "Build the walk, then add story context to each stop."
 const FOLLOW_INSTRUCTION_TEXT =
-  "Walk the route one stop at a time. Only the current Step panel stays open."
+  "Walk the route one stop at a time. Story panels reveal as you go."
 
 const WIDGET_TYPE_MAP: Record<string, string> = {
   "Note +": "note",
@@ -196,8 +196,8 @@ export class InAreaScreen {
     textObj.setParent(this.container)
     this.localizationStatusComp = textObj.createComponent("Component.Text") as Text
     this.localizationStatusComp.text = this.localizationBaseText
-    this.localizationStatusComp.size = 25
-    this.localizationStatusComp.worldSpaceRect = Rect.create(-20, 20, -1.45, 1.45)
+    this.localizationStatusComp.size = 31
+    this.localizationStatusComp.worldSpaceRect = Rect.create(-20.5, 20.5, -1.75, 1.75)
     this.localizationStatusComp.horizontalOverflow = HorizontalOverflow.Wrap
     this.localizationStatusComp.verticalOverflow = VerticalOverflow.Shrink
     this.localizationStatusComp.horizontalAlignment = HorizontalAlignment.Center
@@ -205,7 +205,7 @@ export class InAreaScreen {
     this.localizationStatusComp.textFill.mode = TextFillMode.Solid
     this.localizationStatusComp.textFill.color = new vec4(1, 0.85, 0.4, 1)
     this.localizationStatusComp.renderOrder = 10
-    textObj.getTransform().setLocalPosition(new vec3(0, 13.4, 2))
+    textObj.getTransform().setLocalPosition(new vec3(0, 14.6, 2))
   }
 
   private buildInstructionText(): void {
@@ -213,8 +213,8 @@ export class InAreaScreen {
     textObj.setParent(this.container)
     this.instructionTextComp = textObj.createComponent("Component.Text") as Text
     this.instructionTextComp.text = INSTRUCTION_TEXT
-    this.instructionTextComp.size = 25
-    this.instructionTextComp.worldSpaceRect = Rect.create(-19.5, 19.5, -1.2, 1.2)
+    this.instructionTextComp.size = 29
+    this.instructionTextComp.worldSpaceRect = Rect.create(-20.5, 20.5, -1.35, 1.35)
     this.instructionTextComp.horizontalOverflow = HorizontalOverflow.Wrap
     this.instructionTextComp.verticalOverflow = VerticalOverflow.Overflow
     this.instructionTextComp.horizontalAlignment = HorizontalAlignment.Left
@@ -223,16 +223,16 @@ export class InAreaScreen {
     this.instructionTextComp.textFill.color = new vec4(1, 1, 1, 1)
     this.instructionTextComp.renderOrder = 10
 
-    textObj.getTransform().setLocalPosition(new vec3(0, 10.8, 2))
+    textObj.getTransform().setLocalPosition(new vec3(0, 11.45, 2))
   }
 
   private buildRouteSummary(): void {
     const textObj = global.scene.createSceneObject("CircuitRouteSummary")
     textObj.setParent(this.container)
     this.routeSummaryComp = textObj.createComponent("Component.Text") as Text
-    this.routeSummaryComp.text = "Community layer: no steps yet.\nStep + marks the route. Note + leaves freeform context."
-    this.routeSummaryComp.size = 21
-    this.routeSummaryComp.worldSpaceRect = Rect.create(-19.5, 19.5, -1.35, 1.35)
+    this.routeSummaryComp.text = "Story 1: no steps yet.\nStep + marks the route. Note + leaves freeform context."
+    this.routeSummaryComp.size = 25
+    this.routeSummaryComp.worldSpaceRect = Rect.create(-20.5, 20.5, -1.55, 1.55)
     this.routeSummaryComp.horizontalOverflow = HorizontalOverflow.Wrap
     this.routeSummaryComp.verticalOverflow = VerticalOverflow.Shrink
     this.routeSummaryComp.horizontalAlignment = HorizontalAlignment.Left
@@ -240,7 +240,7 @@ export class InAreaScreen {
     this.routeSummaryComp.textFill.mode = TextFillMode.Solid
     this.routeSummaryComp.textFill.color = new vec4(0.72, 0.95, 1, 0.95)
     this.routeSummaryComp.renderOrder = 10
-    textObj.getTransform().setLocalPosition(new vec3(0, 8.25, 2))
+    textObj.getTransform().setLocalPosition(new vec3(0, 8.45, 2))
   }
 
   private buildPrimaryRow(): void {
@@ -297,9 +297,10 @@ export class InAreaScreen {
     const utilityButtons: ButtonConfig[] = [
       {label: "Gather", event: "recallWidgets", fontSize: 22, requiresAreaReady: true, disabledWhenFollowing: true},
       {label: "Snap", event: "toggleSnapToSurface", fontSize: 22, requiresAreaReady: true, disabledWhenFollowing: true},
+      {label: "Hide Panel", event: "toggleMainPanelMinimized", fontSize: 20},
       {label: "Exit", event: "exitArea", fontSize: 22},
     ]
-    this.buildGridRow("UtilityGrid", utilityButtons, new vec3(0, -12.4, 2), new vec2(10, 4.7), 3)
+    this.buildGridRow("UtilityGrid", utilityButtons, new vec3(0, -12.8, 2), new vec2(10.2, 4.7), 4)
   }
 
   private buildGridRow(
@@ -411,7 +412,7 @@ export class InAreaScreen {
 
     if (this.areaReady) {
       this.localizationStatusComp.text = this.localizationBaseText
-      this.localizationStatusComp.size = 27
+      this.localizationStatusComp.size = 32
       this.localizationStatusComp.textFill.color = new vec4(0.72, 0.95, 1, 0.96)
       return
     }
@@ -423,7 +424,7 @@ export class InAreaScreen {
 
     this.localizationStatusComp.text =
       `${this.localizationBaseText}\n${frames[frame]} scanning`
-    this.localizationStatusComp.size = 21
+    this.localizationStatusComp.size = 25
     this.localizationStatusComp.textFill.color = new vec4(1, 0.84, 0.38, 1)
   }
 

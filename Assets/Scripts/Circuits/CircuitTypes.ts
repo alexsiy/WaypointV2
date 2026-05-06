@@ -22,18 +22,18 @@ export interface CircuitDefinition {
 export const DEFAULT_CIRCUITS: CircuitDefinition[] = [
   {
     id: "community",
-    name: "Community",
-    authorLabel: "Community voice",
+    name: "Story 1",
+    authorLabel: "Story 1 voice",
   },
   {
     id: "expert",
-    name: "Expert",
-    authorLabel: "Guest expert",
+    name: "Story 2",
+    authorLabel: "Story 2 voice",
   },
   {
     id: "memory",
-    name: "Memory",
-    authorLabel: "Personal memory",
+    name: "Story 3",
+    authorLabel: "Story 3 voice",
   },
 ]
 

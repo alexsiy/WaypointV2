@@ -10,7 +10,6 @@ import {AnchorController} from "../Anchors/AnchorController"
 import {CaptureFlowManager} from "../Anchors/CaptureFlowManager"
 import {WidgetController} from "../Widgets/WidgetController"
 import {WidgetType} from "../Widgets/WidgetTypes"
-import {NoteWidget} from "../Widgets/Types/NoteWidget"
 import {SnapToSurface} from "../Widgets/Actions/SnapToSurface"
 import {CircuitController} from "../Circuits/CircuitController"
 import {AreaInfo} from "../UI/Components/AreaGridBuilder"
@@ -263,6 +262,10 @@ export class AppController extends BaseScriptComponent {
 
     this.eventBus.on("advanceCircuitStep", () => {
       this.advanceCircuitStep()
+    })
+
+    this.eventBus.on("toggleMainPanelMinimized", () => {
+      this.toggleMainPanelMinimized()
     })
 
     // InAreaScreen "Recall Widgets" button
@@ -803,6 +806,7 @@ export class AppController extends BaseScriptComponent {
     this.snapToSurface.stopSession()
     this.snapToSurfaceActive = false
     this.screenFactory?.setCircuitFollowActive(false)
+    this.uiController?.setPanelMinimized(false)
 
     this.widgetsRestored = false
     this.isExiting = false
@@ -842,12 +846,6 @@ export class AppController extends BaseScriptComponent {
       this.currentAreaName
     )
 
-    if (type === WidgetType.Note && widget) {
-      const note = widget as NoteWidget
-      if (!note.getCircuitStep() && note.getText().length === 0) {
-        note.setText("New note")
-      }
-    }
     this.refreshCircuitUi()
   }
 
@@ -880,7 +878,7 @@ export class AppController extends BaseScriptComponent {
 
   private nextCircuit(): void {
     if (!this.ensureAreaReady(
-      "Still scanning this area.\nLayers unlock once the saved space is found."
+      "Still scanning this area.\nStories unlock once the saved space is found."
     )) {
       return
     }
@@ -890,7 +888,7 @@ export class AppController extends BaseScriptComponent {
 
   private selectCircuit(index: number): void {
     if (!this.ensureAreaReady(
-      "Still scanning this area.\nLayers unlock once the saved space is found."
+      "Still scanning this area.\nStories unlock once the saved space is found."
     )) {
       return
     }
@@ -950,10 +948,16 @@ export class AppController extends BaseScriptComponent {
     this.screenFactory?.setSnapActive(this.snapToSurfaceActive)
   }
 
+  private toggleMainPanelMinimized(): void {
+    if (!this.uiController) return
+    this.uiController.setPanelMinimized(!this.uiController.isPanelMinimized())
+  }
+
   private deleteAllAreas(): void {
     this.logger.info("deleteAllAreas — clearing all storage")
     this.detachWidgetParentFromAnchor()
     this.circuitController?.stopFollow()
+    this.uiController?.setPanelMinimized(false)
     void this.anchorController.closeSession()
     this.storageController.clearAllAreas()
     this.widgetController.clearAllWidgets()

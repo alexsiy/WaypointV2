@@ -86,7 +86,7 @@ export class CircuitController {
     const layerName = this.getActiveCircuitName()
 
     if (routeSteps.length === 0) {
-      return `${layerName} layer: no route points yet.\nStep + marks the first stop in this area.`
+      return `${layerName}: no route points yet.\nStep + marks the first stop in this area.`
     }
 
     const countText = `${activeSteps.length}/${routeSteps.length}`
@@ -96,7 +96,7 @@ export class CircuitController {
         : `Walkthrough mode: step ${Math.min(this.nextStepIndex + 1, activeSteps.length)}/${activeSteps.length} is open.`
       : "Create mode: add Step+ stops, then Follow Path plays them one at a time."
 
-    return `${layerName} layer: ${countText} stops on the shared route.\n${followText}`
+    return `${layerName}: ${countText} stops on the shared route.\n${followText}`
   }
 
   nextCircuit(): string {
@@ -116,8 +116,8 @@ export class CircuitController {
     this.clearGuide()
     this.applyActiveCircuitVisibility()
     this.statusCallback(
-      `Layer selected: ${this.getActiveCircuitName()}\n` +
-        "Only notes from this layer are shown."
+      `Story selected: ${this.getActiveCircuitName()}\n` +
+        "Only this story's path steps are shown."
     )
     return this.getActiveCircuitName()
   }
@@ -340,13 +340,13 @@ export class CircuitController {
 
       const note = this.asCircuitNote(widget)
       if (!note) {
-        target.enabled = !this.followActive
+        target.enabled = true
         continue
       }
 
       const meta = note.getCircuitStep()
       if (!meta) {
-        target.enabled = !this.followActive
+        target.enabled = true
       } else if (meta.circuitId !== activeId) {
         target.enabled = false
       } else if (!this.followActive) {
@@ -530,9 +530,15 @@ export class CircuitController {
         : `Next: step ${this.nextStepIndex + 2}/${totalSteps}.`
 
     const noteText = step.text.trim()
+    const circuitName = this.getCircuitDisplayName(step.meta.circuitId)
     return noteText.length > 0
-      ? `${step.meta.circuitName} step ${step.meta.stepIndex + 1}/${totalSteps}\n${noteText}\n${nextLine}`
-      : `${step.meta.circuitName} step ${step.meta.stepIndex + 1}/${totalSteps}\n${nextLine}`
+      ? `${circuitName} step ${step.meta.stepIndex + 1}/${totalSteps}\n${noteText}\n${nextLine}`
+      : `${circuitName} step ${step.meta.stepIndex + 1}/${totalSteps}\n${nextLine}`
+  }
+
+  private getCircuitDisplayName(circuitId: string): string {
+    const circuit = DEFAULT_CIRCUITS.find((item) => item.id === circuitId)
+    return circuit ? circuit.name : this.getActiveCircuitName()
   }
 
   private getStepFollowPosition(step: CircuitStepRuntime): vec3 {
