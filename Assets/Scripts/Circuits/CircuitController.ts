@@ -341,18 +341,24 @@ export class CircuitController {
       const note = this.asCircuitNote(widget)
       if (!note) {
         target.enabled = true
+        this.widgetController.setWidgetAuxiliaryVisibility(widget, true)
         continue
       }
 
       const meta = note.getCircuitStep()
       if (!meta) {
         target.enabled = true
+        this.widgetController.setWidgetAuxiliaryVisibility(widget, true)
       } else if (meta.circuitId !== activeId) {
         target.enabled = false
+        this.widgetController.setWidgetAuxiliaryVisibility(widget, false)
       } else if (!this.followActive) {
         target.enabled = true
+        this.widgetController.setWidgetAuxiliaryVisibility(widget, true)
       } else {
-        target.enabled = visibleFollowTargets.has(target)
+        const visible = visibleFollowTargets.has(target)
+        target.enabled = visible
+        this.widgetController.setWidgetAuxiliaryVisibility(widget, visible)
       }
     }
 

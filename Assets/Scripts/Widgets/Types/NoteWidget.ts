@@ -1,14 +1,34 @@
 import {TextInputField} from "SpectaclesUIKit.lspkg/Scripts/Components/TextInputField/TextInputField"
 import {RectangleButton} from "SpectaclesUIKit.lspkg/Scripts/Components/Button/RectangleButton"
+import Event, {PublicApi} from "SpectaclesInteractionKit.lspkg/Utils/Event"
 import {Logger} from "Utilities.lspkg/Scripts/Utils/Logger"
 import {WidgetBase} from "../WidgetBase"
 import {CircuitStepMeta} from "../../Circuits/CircuitTypes"
 import {addButtonLabel} from "../../Shared/ButtonTextHelper"
 
+export interface NoteObjectFrameVec3Data {
+  x: number
+  y: number
+  z: number
+}
+
+export interface NoteObjectFrameVec2Data {
+  x: number
+  y: number
+}
+
+export interface NoteObjectFrameData {
+  enabled: boolean
+  position: NoteObjectFrameVec3Data
+  rotation: NoteObjectFrameVec3Data
+  size: NoteObjectFrameVec2Data
+}
+
 interface NoteData {
   text: string
   circuit?: CircuitStepMeta
   minimized?: boolean
+  objectFrame?: NoteObjectFrameData
 }
 
 const NOTE_MIN_SIZE = new vec2(15, 9.5)
@@ -16,6 +36,7 @@ const NOTE_MAX_SIZE = new vec2(32, 26)
 const NOTE_MINIMIZED_SIZE = new vec2(8.8, 4.4)
 const NOTE_MINIMIZE_BUTTON_SIZE = new vec2(2.8, 2.4)
 const NOTE_RESTORE_BUTTON_SIZE = new vec2(7.2, 3)
+const OBJECT_FRAME_BUTTON_SIZE = new vec2(5.4, 2.4)
 
 /**
  * Note Widget — sticky note with editable text.
@@ -53,9 +74,16 @@ export class NoteWidget extends WidgetBase {
   private inputField: TextInputField | null = null
   private guideState: "none" | "upcoming" | "active" | "visited" = "none"
   private minimized: boolean = false
+  private objectFrame: NoteObjectFrameData | null = null
   private minimizeButton: RectangleButton | null = null
   private minimizeButtonObject: SceneObject | null = null
   private minimizeButtonText: Text | null = null
+  private objectFrameButton: RectangleButton | null = null
+  private objectFrameButtonObject: SceneObject | null = null
+  private objectFrameButtonText: Text | null = null
+  private onObjectFrameToggleEvent: Event<void> = new Event<void>()
+  readonly onObjectFrameToggle: PublicApi<void> =
+    this.onObjectFrameToggleEvent.publicApi()
 
   onAwake(): void {
     super.onAwake()
@@ -66,6 +94,7 @@ export class NoteWidget extends WidgetBase {
     )
 
     this.buildMinimizeButton()
+    this.buildObjectFrameButton()
 
     if (this.textComponent) {
       this.textComponent.text = this.getDisplayText()
@@ -114,6 +143,9 @@ export class NoteWidget extends WidgetBase {
     if (this.circuitStep) {
       data.circuit = this.circuitStep
     }
+    if (this.objectFrame) {
+      data.objectFrame = this.objectFrame
+    }
     return JSON.stringify(data)
   }
 
@@ -123,6 +155,7 @@ export class NoteWidget extends WidgetBase {
       this.noteText = data.text ?? ""
       this.circuitStep = data.circuit ?? null
       this.minimized = data.minimized === true
+      this.objectFrame = data.objectFrame ?? null
       if (this.textComponent) {
         this.textComponent.text = this.getDisplayText()
         this.applyResponsiveLayout()
@@ -157,6 +190,21 @@ export class NoteWidget extends WidgetBase {
     this.emitContentChange()
   }
 
+  getObjectFrameData(): NoteObjectFrameData | null {
+    return this.objectFrame
+  }
+
+  setObjectFrameData(
+    data: NoteObjectFrameData | null,
+    emitChange: boolean = true
+  ): void {
+    this.objectFrame = data
+    this.applyObjectFrameButtonStyle(this.getDesiredFrameSize())
+    if (emitChange) {
+      this.emitContentChange()
+    }
+  }
+
   applyCompactLayout(): void {
     this.applyResponsiveLayout()
   }
@@ -166,6 +214,7 @@ export class NoteWidget extends WidgetBase {
     this.applyTextStyle(size)
     this.applyInputStyle(size)
     this.applyMinimizeButtonStyle(size)
+    this.applyObjectFrameButtonStyle(size)
   }
 
   setGuideState(state: "none" | "upcoming" | "active" | "visited"): void {
@@ -308,6 +357,59 @@ export class NoteWidget extends WidgetBase {
       ? new vec3(0, 0, 1.1)
       : new vec3(frameSize.x * 0.5 - 1.85, frameSize.y * 0.5 - 1.55, 0.55)
     this.minimizeButtonObject.getTransform().setLocalPosition(position)
+  }
+
+  private buildObjectFrameButton(): void {
+    if (this.objectFrameButtonObject) return
+
+    this.objectFrameButtonObject = global.scene.createSceneObject("NoteObjectFrameButton")
+    this.objectFrameButtonObject.setParent(this.getSceneObject())
+
+    this.objectFrameButton = this.objectFrameButtonObject.createComponent(
+      RectangleButton.getTypeName()
+    ) as RectangleButton
+    ;(this.objectFrameButton as any)._style = "PrimaryNeutral"
+    this.objectFrameButton.size = new vec3(
+      OBJECT_FRAME_BUTTON_SIZE.x,
+      OBJECT_FRAME_BUTTON_SIZE.y,
+      1
+    )
+    this.objectFrameButton.renderOrder = 14
+    this.objectFrameButton.initialize()
+    this.objectFrameButtonText = addButtonLabel(
+      this.objectFrameButtonObject,
+      "Box",
+      OBJECT_FRAME_BUTTON_SIZE.x,
+      OBJECT_FRAME_BUTTON_SIZE.y,
+      17
+    )
+    this.objectFrameButtonText.renderOrder = 15
+    this.objectFrameButton.onTriggerUp.add(() => {
+      this.onObjectFrameToggleEvent.invoke()
+    })
+  }
+
+  private applyObjectFrameButtonStyle(frameSize: vec2): void {
+    if (!this.objectFrameButtonObject) return
+
+    const active = this.objectFrame?.enabled === true
+    this.objectFrameButtonObject.enabled = !this.minimized
+
+    if (this.objectFrameButton) {
+      ;(this.objectFrameButton as any)._style = active ? "Primary" : "PrimaryNeutral"
+    }
+
+    if (this.objectFrameButtonText) {
+      this.objectFrameButtonText.text = active ? "Box On" : "Box"
+      this.objectFrameButtonText.size = active ? 15 : 17
+      this.objectFrameButtonText.textFill.color = active
+        ? new vec4(1, 0.92, 0.45, 1)
+        : new vec4(1, 1, 1, 0.95)
+    }
+
+    this.objectFrameButtonObject.getTransform().setLocalPosition(
+      new vec3(-frameSize.x * 0.5 + 3.7, frameSize.y * 0.5 - 1.55, 0.55)
+    )
   }
 
   private applyTextColor(): void {

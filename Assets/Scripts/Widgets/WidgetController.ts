@@ -5,7 +5,7 @@ import {findAllComponentsInSelfOrChildren} from "SpectaclesInteractionKit.lspkg/
 import {Logger} from "Utilities.lspkg/Scripts/Utils/Logger"
 import {WidgetBase} from "./WidgetBase"
 import {WidgetType} from "./WidgetTypes"
-import {NoteWidget} from "./Types/NoteWidget"
+import {NoteObjectFrameData, NoteWidget} from "./Types/NoteWidget"
 import {WatchWidget} from "./Types/WatchWidget"
 import {PhotoWidget} from "./Types/PhotoWidget"
 import {CAMERA_GAZE_OFFSET} from "../Shared/Constants"
@@ -31,6 +31,14 @@ const WIDGET_FRAME_SIZES: Record<WidgetType, vec2> = {
   [WidgetType.Photo]: new vec2(14, 14),
 }
 
+const OBJECT_FRAME_DEFAULT_SIZE = new vec2(28, 22)
+const OBJECT_FRAME_COLOR = new vec4(1, 0.86, 0.22, 0.95)
+
+interface ObjectFrameRuntime {
+  root: SceneObject
+  frame: Frame
+}
+
 export class WidgetController {
   private static instance: WidgetController
 
@@ -48,6 +56,9 @@ export class WidgetController {
 
   // Map widgetIndex → Frame component (for listening to translation events, etc.)
   private frameMap: Map<number, Frame> = new Map()
+
+  // Map widgetIndex → separate spatial object outline owned by a note/step.
+  private objectFrameMap: Map<number, ObjectFrameRuntime> = new Map()
 
   // Recall/minimize state: save transforms before minimize, restore on release
   private recallActive: boolean = false
@@ -220,6 +231,14 @@ export class WidgetController {
       this.saveAllWidgets(storageCtrl, areaName)
     })
 
+    if (widget.widgetType === WidgetType.Note) {
+      this.configureNoteObjectFrameControls(
+        widget as NoteWidget,
+        storageCtrl,
+        areaName
+      )
+    }
+
     // Handle widget deletion
     widget.onDelete.add((idx: number) =>
       this.removeWidget(idx, storageCtrl, areaName)
@@ -247,6 +266,10 @@ export class WidgetController {
       if (entry.content) {
         widget.serializedContent = entry.content
         this.refreshWidgetLayout(widget)
+      }
+
+      if (widget.widgetType === WidgetType.Note) {
+        this.syncObjectFrameForNote(widget as NoteWidget, storageCtrl, areaName)
       }
 
       const frameObj = this.getTransformTarget(widget)
@@ -358,6 +381,7 @@ export class WidgetController {
     this.wrapperMap.clear()
     this.frameObjMap.clear()
     this.frameMap.clear()
+    this.objectFrameMap.clear()
     this.nextIndex = 0
     this.recallActive = false
     this.savedPositions.clear()
@@ -486,6 +510,17 @@ export class WidgetController {
     return this.frameObjMap.get(widget.widgetIndex)
   }
 
+  setWidgetAuxiliaryVisibility(widget: WidgetBase, visible: boolean): void {
+    const objectFrame = this.objectFrameMap.get(widget.widgetIndex)
+    if (!objectFrame) return
+
+    const note = widget.widgetType === WidgetType.Note
+      ? (widget as NoteWidget)
+      : null
+    const frameEnabled = note?.getObjectFrameData()?.enabled === true
+    objectFrame.root.enabled = visible && frameEnabled
+  }
+
   refreshWidgetLayout(widget: WidgetBase): void {
     const frame = this.frameMap.get(widget.widgetIndex)
     if (!frame) return
@@ -509,6 +544,176 @@ export class WidgetController {
     return this.frameObjMap.get(w.widgetIndex)
   }
 
+  private configureNoteObjectFrameControls(
+    note: NoteWidget,
+    storageCtrl: StorageController,
+    areaName: string
+  ): void {
+    note.onObjectFrameToggle.add(() => {
+      this.toggleObjectFrameForNote(note, storageCtrl, areaName)
+    })
+  }
+
+  private toggleObjectFrameForNote(
+    note: NoteWidget,
+    storageCtrl: StorageController,
+    areaName: string
+  ): void {
+    const current = note.getObjectFrameData()
+    if (current?.enabled) {
+      this.destroyObjectFrame(note.widgetIndex)
+      note.setObjectFrameData(null)
+      return
+    }
+
+    const data = this.createDefaultObjectFrameData()
+    note.setObjectFrameData(data, false)
+    this.createObjectFrameForNote(note, data, storageCtrl, areaName)
+    note.setObjectFrameData(this.readObjectFrameData(note) ?? data)
+  }
+
+  private syncObjectFrameForNote(
+    note: NoteWidget,
+    storageCtrl: StorageController,
+    areaName: string
+  ): void {
+    const data = note.getObjectFrameData()
+    if (data?.enabled) {
+      this.createObjectFrameForNote(note, data, storageCtrl, areaName)
+    } else {
+      this.destroyObjectFrame(note.widgetIndex)
+    }
+  }
+
+  private createObjectFrameForNote(
+    note: NoteWidget,
+    data: NoteObjectFrameData,
+    storageCtrl: StorageController,
+    areaName: string
+  ): void {
+    this.destroyObjectFrame(note.widgetIndex)
+
+    const root = global.scene.createSceneObject(`ObjectFrame_${note.widgetIndex}`)
+    root.setParent(this.widgetParent)
+    root.getTransform().setLocalPosition(this.dataToVec3(data.position))
+    root.getTransform().setLocalRotation(
+      quat.fromEulerAngles(
+        data.rotation.x,
+        data.rotation.y,
+        data.rotation.z
+      )
+    )
+
+    const frame = root.createComponent(Frame.getTypeName()) as Frame
+    ;(frame as any).autoShowHide = false
+    ;(frame as any).useBillboarding = true
+    ;(frame as any).xOnTranslate = true
+    ;(frame as any).yOnTranslate = true
+    ;(frame as any)._onlyInteractOnBorder = true
+    ;(frame as any)._allowScaling = true
+    ;(frame as any).allowNonUniformScaling = true
+    ;(frame as any)._appearance = "Small"
+    ;(frame as any)._innerSize = new vec2(data.size.x, data.size.y)
+    ;(frame as any)._padding = new vec2(0, 0)
+    ;(frame as any)._cutOutCenter = true
+    frame.allowTranslation = true
+    frame.initialize()
+    frame.allowTranslation = true
+    frame.allowScaling = true
+    frame.allowNonUniformScaling = true
+    frame.innerSize = new vec2(data.size.x, data.size.y)
+    frame.padding = new vec2(0, 0)
+    frame.cutOutCenter = true
+    frame.border = 3
+    frame.renderOrder = 18
+    frame.showVisual()
+    frame.roundedRectangle.borderColor = OBJECT_FRAME_COLOR
+
+    frame.onTranslationEnd.add(() => {
+      this.persistObjectFrameState(note, storageCtrl, areaName)
+    })
+    frame.onScalingEnd.add(() => {
+      this.persistObjectFrameState(note, storageCtrl, areaName)
+    })
+    frame.onSnappingComplete.add(() => {
+      this.persistObjectFrameState(note, storageCtrl, areaName)
+    })
+
+    this.objectFrameMap.set(note.widgetIndex, {root, frame})
+  }
+
+  private persistObjectFrameState(
+    note: NoteWidget,
+    storageCtrl: StorageController,
+    areaName: string
+  ): void {
+    const data = this.readObjectFrameData(note)
+    if (!data) return
+
+    note.setObjectFrameData(data, false)
+    this.saveAllWidgets(storageCtrl, areaName)
+  }
+
+  private readObjectFrameData(note: NoteWidget): NoteObjectFrameData | null {
+    const objectFrame = this.objectFrameMap.get(note.widgetIndex)
+    if (!objectFrame) return null
+
+    const transform = objectFrame.root.getTransform()
+    return {
+      enabled: true,
+      position: this.vec3ToData(transform.getLocalPosition()),
+      rotation: this.vec3ToData(transform.getLocalRotation().toEulerAngles()),
+      size: {
+        x: objectFrame.frame.innerSize.x,
+        y: objectFrame.frame.innerSize.y,
+      },
+    }
+  }
+
+  private createDefaultObjectFrameData(): NoteObjectFrameData {
+    const camTransform = WorldCameraFinderProvider.getInstance().getTransform()
+    const camPos = camTransform.getWorldPosition()
+    const camRot = camTransform.getWorldRotation()
+    const forward = camRot.multiplyVec3(new vec3(0, 0, -1))
+    const spawnPos = camPos.add(forward.uniformScale(CAMERA_GAZE_OFFSET))
+
+    const parentTransform = this.widgetParent.getTransform()
+    const parentWorldPos = parentTransform.getWorldPosition()
+    const parentWorldRot = parentTransform.getWorldRotation()
+    const invParentRot = parentWorldRot.invert()
+    const localPos = invParentRot.multiplyVec3(spawnPos.sub(parentWorldPos))
+    const localRot = invParentRot.multiply(camRot)
+
+    return {
+      enabled: true,
+      position: this.vec3ToData(localPos),
+      rotation: this.vec3ToData(localRot.toEulerAngles()),
+      size: {
+        x: OBJECT_FRAME_DEFAULT_SIZE.x,
+        y: OBJECT_FRAME_DEFAULT_SIZE.y,
+      },
+    }
+  }
+
+  private destroyObjectFrame(widgetIndex: number): void {
+    const objectFrame = this.objectFrameMap.get(widgetIndex)
+    if (!objectFrame) return
+    objectFrame.root.destroy()
+    this.objectFrameMap.delete(widgetIndex)
+  }
+
+  private vec3ToData(value: vec3): {x: number; y: number; z: number} {
+    return {
+      x: value.x,
+      y: value.y,
+      z: value.z,
+    }
+  }
+
+  private dataToVec3(value: {x: number; y: number; z: number}): vec3 {
+    return new vec3(value.x, value.y, value.z)
+  }
+
   private applyCompactWidgetLayout(type: WidgetType, widget: WidgetBase): void {
     if (type === WidgetType.Note) {
       ;(widget as NoteWidget).applyCompactLayout()
@@ -528,6 +733,7 @@ export class WidgetController {
     if (!widget) return
 
     this.logger.info(`removeWidget index=${index}`)
+    this.destroyObjectFrame(index)
     const wrapper = this.wrapperMap.get(index)
     if (wrapper) {
       wrapper.destroy()
