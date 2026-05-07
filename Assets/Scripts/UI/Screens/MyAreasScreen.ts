@@ -17,6 +17,7 @@ export class MyAreasScreen {
   private eventBus: EventBus
   private logger: Logger
   private summaryText: Text | null = null
+  private boldFont: Font | null = null
 
   constructor(parent: SceneObject, eventBus: EventBus, logger: Logger) {
     this.eventBus = eventBus
@@ -110,6 +111,10 @@ export class MyAreasScreen {
     title.textFill.mode = TextFillMode.Solid
     title.textFill.color = new vec4(1, 1, 1, 1)
     title.renderOrder = 12
+    const bold = this.getBoldFont()
+    if (bold) {
+      title.font = bold
+    }
 
     const summaryObj = global.scene.createSceneObject("MyAreasSummary")
     summaryObj.setParent(this.container)
@@ -133,5 +138,15 @@ export class MyAreasScreen {
 
   getContainer(): SceneObject {
     return this.container
+  }
+
+  private getBoldFont(): Font | null {
+    if (this.boldFont) return this.boldFont
+    try {
+      this.boldFont = requireAsset("Fonts/theboldfont.ttf") as Font
+      return this.boldFont
+    } catch (_e) {
+      return null
+    }
   }
 }

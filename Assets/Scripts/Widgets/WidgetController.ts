@@ -517,6 +517,25 @@ export class WidgetController {
     objectFrame.root.enabled = visible && frameEnabled
   }
 
+  setWidgetTransformInteractive(widget: WidgetBase, interactive: boolean): void {
+    const frame = this.frameMap.get(widget.widgetIndex)
+    if (!frame) return
+    frame.allowTranslation = interactive
+    frame.allowScaling = false
+  }
+
+  setNoteEditingEnabled(note: NoteWidget, enabled: boolean): void {
+    note.setEditingEnabled(enabled)
+  }
+
+  setObjectFrameInteractiveForNote(note: NoteWidget, interactive: boolean): void {
+    const runtime = this.objectFrameMap.get(note.widgetIndex)
+    if (!runtime) return
+    runtime.frame.allowTranslation = interactive
+    runtime.frame.allowScaling = interactive
+    runtime.frame.allowNonUniformScaling = interactive
+  }
+
   toggleObjectFrameForNote(
     note: NoteWidget,
     storageCtrl: StorageController,

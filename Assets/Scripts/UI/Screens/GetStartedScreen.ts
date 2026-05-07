@@ -26,6 +26,7 @@ export class GetStartedScreen {
   private contentObj: SceneObject
   private logger: Logger
   private eventBus: EventBus
+  private boldFont: Font | null = null
   private introNodes: IntroNode[] = []
   private introCancelSet: CancelSet = new CancelSet()
 
@@ -74,7 +75,8 @@ export class GetStartedScreen {
       new vec2(20, 2.5),
       72,
       new vec4(1, 1, 1, 1),
-      0
+      0,
+      true
     )
 
     this.createText(
@@ -185,7 +187,8 @@ export class GetStartedScreen {
     rectSize: vec2,
     size: number,
     color: vec4,
-    delay: number
+    delay: number,
+    useBoldFont: boolean = false
   ): Text {
     const textObj = global.scene.createSceneObject(name)
     textObj.setParent(this.contentObj)
@@ -207,9 +210,25 @@ export class GetStartedScreen {
     textComp.textFill.mode = TextFillMode.Solid
     textComp.textFill.color = color
     textComp.renderOrder = 10
+    if (useBoldFont) {
+      const bold = this.getBoldFont()
+      if (bold) {
+        textComp.font = bold
+      }
+    }
 
     this.registerIntroNode(textObj, delay)
     return textComp
+  }
+
+  private getBoldFont(): Font | null {
+    if (this.boldFont) return this.boldFont
+    try {
+      this.boldFont = requireAsset("Fonts/theboldfont.ttf") as Font
+      return this.boldFont
+    } catch (_e) {
+      return null
+    }
   }
 
   private registerIntroNode(obj: SceneObject, delay: number): void {

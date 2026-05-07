@@ -71,6 +71,7 @@ export class NoteWidget extends WidgetBase {
   private circuitStep: CircuitStepMeta | null = null
   private inputField: TextInputField | null = null
   private guideState: "none" | "upcoming" | "active" | "visited" = "none"
+  private editingEnabled: boolean = true
   private minimized: boolean = false
   private objectFrame: NoteObjectFrameData | null = null
   private minimizeButton: RectangleButton | null = null
@@ -85,7 +86,7 @@ export class NoteWidget extends WidgetBase {
       true
     )
 
-    this.buildMinimizeButton()
+    this.minimized = false
 
     if (this.textComponent) {
       this.textComponent.text = this.getDisplayText()
@@ -129,7 +130,7 @@ export class NoteWidget extends WidgetBase {
   get serializedContent(): string {
     const data: NoteData = {
       text: this.noteText,
-      minimized: this.minimized,
+      minimized: false,
     }
     if (this.circuitStep) {
       data.circuit = this.circuitStep
@@ -145,7 +146,7 @@ export class NoteWidget extends WidgetBase {
       const data: NoteData = JSON.parse(value)
       this.noteText = data.text ?? ""
       this.circuitStep = data.circuit ?? null
-      this.minimized = data.minimized === true
+      this.minimized = false
       this.objectFrame = data.objectFrame ?? null
       if (this.textComponent) {
         this.textComponent.text = this.getDisplayText()
@@ -199,11 +200,15 @@ export class NoteWidget extends WidgetBase {
     this.applyResponsiveLayout()
   }
 
+  setEditingEnabled(enabled: boolean): void {
+    this.editingEnabled = enabled
+    this.applyResponsiveLayout()
+  }
+
   applyResponsiveLayout(frameSize?: vec2): void {
     const size = frameSize ?? this.getDesiredFrameSize()
     this.applyTextStyle(size)
     this.applyInputStyle(size)
-    this.applyMinimizeButtonStyle(size)
   }
 
   setGuideState(state: "none" | "upcoming" | "active" | "visited"): void {
@@ -239,11 +244,12 @@ export class NoteWidget extends WidgetBase {
     const halfH = frameSize.y * 0.5
     this.textComponent.text = this.noteText
     this.textComponent.size = this.getResponsiveTextSize()
+    const topPadding = this.editingEnabled ? 4.6 : 1.25
     this.textComponent.worldSpaceRect = Rect.create(
       -halfW + 1.15,
       halfW - 1.15,
       -halfH + 1.15,
-      halfH - 4.6
+      halfH - topPadding
     )
     this.textComponent.horizontalOverflow = HorizontalOverflow.Wrap
     this.textComponent.verticalOverflow = VerticalOverflow.Shrink
@@ -265,17 +271,17 @@ export class NoteWidget extends WidgetBase {
     }
 
     if (!this.inputField) return
-    const inputWidth = Math.max(9, frameSize.x - 7)
-    this.inputField.size = new vec3(inputWidth, 3.1, 1)
+    const inputWidth = Math.max(8.8, frameSize.x - 2.8)
+    this.inputField.size = new vec3(inputWidth, 2.6, 1)
     this.inputField.placeholderText = ""
     this.inputField.fontSize = 24
     if (this.inputFieldObject) {
-      this.inputFieldObject.enabled = !this.minimized
+      this.inputFieldObject.enabled = !this.minimized && this.editingEnabled
     }
 
-    if (this.inputFieldObject && !this.minimized) {
+    if (this.inputFieldObject && !this.minimized && this.editingEnabled) {
       this.inputFieldObject.getTransform().setLocalPosition(
-        new vec3(-2, frameSize.y * 0.5 - 2.1, 0.12)
+        new vec3(0, frameSize.y * 0.5 - 3.0, 0.12)
       )
     }
   }

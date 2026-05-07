@@ -24,6 +24,12 @@ interface CircuitStepRuntime {
   text: string
 }
 
+export interface CircuitSelectionIntent {
+  startedFollow: boolean
+  needsCreation: boolean
+  stepCount: number
+}
+
 export class CircuitController {
   private widgetController: WidgetController
   private storageController: StorageController
@@ -34,6 +40,9 @@ export class CircuitController {
 
   private activeCircuitIndex: number = 0
   private followActive: boolean = false
+  private createModeActive: boolean = false
+  private currentCreateStepWidgetIndex: number = -1
+  private revealedCreateNoteWidgetIndex: number = -1
   private nextStepIndex: number = 0
   private lastStatusAt: number = 0
   private enteredStepAt: number = -1
@@ -61,6 +70,8 @@ export class CircuitController {
     this.currentAreaName = areaName
     this.activeCircuitIndex = 0
     this.followActive = false
+    this.createModeActive = false
+    this.currentCreateStepWidgetIndex = -1
     this.nextStepIndex = 0
     this.enteredStepAt = -1
     this.lastStatusAt = 0
@@ -76,27 +87,70 @@ export class CircuitController {
     return this.getActiveCircuit().name
   }
 
+  getActiveCircuitIndex(): number {
+    return this.activeCircuitIndex
+  }
+
+  getActiveCircuitStepCount(): number {
+    return this.getStepsForCircuit(this.getActiveCircuit().id).length
+  }
+
+  hasStepsForCircuit(circuitId: string): boolean {
+    return this.getStepCountForCircuit(circuitId) > 0
+  }
+
+  getStepCountForCircuit(circuitId: string): number {
+    return this.getStepsForCircuit(circuitId).length
+  }
+
   isFollowing(): boolean {
     return this.followActive
   }
 
+  isCreateModeActive(): boolean {
+    return this.createModeActive
+  }
+
+  setCreateModeActive(active: boolean): void {
+    this.createModeActive = active
+    if (!active) {
+      this.currentCreateStepWidgetIndex = -1
+      this.revealedCreateNoteWidgetIndex = -1
+    }
+    if (active) {
+      this.followActive = false
+      this.nextStepIndex = 0
+      this.enteredStepAt = -1
+      this.lastStatusAt = 0
+      this.clearGuide()
+    }
+    this.applyActiveCircuitVisibility()
+  }
+
   getActiveCircuitSummary(): string {
     const activeSteps = this.getStepsForCircuit(this.getActiveCircuit().id)
-    const routeSteps = this.getRouteSteps()
-    const layerName = this.getActiveCircuitName()
+    const total = activeSteps.length
 
-    if (routeSteps.length === 0) {
-      return `${layerName}: no route points yet.\nStep + marks the first stop in this area.`
+    if (this.createModeActive) {
+      return `Creating · Circuit ${this.activeCircuitIndex + 1}\nMove/resize the box, then tap Next Step or Finish.`
     }
 
-    const countText = `${activeSteps.length}/${routeSteps.length}`
-    const followText = this.followActive
-      ? activeSteps.length < 2
-        ? "Add one more Step+ to create a walkable path."
-        : `Walkthrough mode: step ${Math.min(this.nextStepIndex + 1, activeSteps.length)}/${activeSteps.length} is open.`
-      : "Create mode: add Step+ stops, then Follow Path plays them one at a time."
+    if (total === 0) {
+      return `Authoring · Step 0/0\nNo steps yet. Tap Create Circuit (${this.activeCircuitIndex + 1}) to add Step 1.`
+    }
 
-    return `${layerName}: ${countText} stops on the shared route.\n${followText}`
+    if (this.followActive) {
+      const current = Math.min(this.nextStepIndex + 1, total)
+      return `Following · Step ${current}/${total}\nWalk to the highlighted step, or tap Next Step.`
+    }
+
+    const pendingBox = this.getLatestStepMissingObjectFrame(activeSteps)
+    if (pendingBox) {
+      const stepNumber = pendingBox.meta.stepIndex + 1
+      return `Authoring · Step ${stepNumber}/${total}\nPlace a box for Step ${stepNumber} before adding another step.`
+    }
+
+    return `Authoring · Step ${total}/${total}\nTap Create Circuit (${this.activeCircuitIndex + 1}) to add Step ${total + 1}.`
   }
 
   nextCircuit(): string {
@@ -111,20 +165,74 @@ export class CircuitController {
 
     this.activeCircuitIndex = index
     this.followActive = false
+    this.createModeActive = false
+    this.currentCreateStepWidgetIndex = -1
     this.nextStepIndex = 0
     this.enteredStepAt = -1
+    this.lastStatusAt = 0
     this.clearGuide()
     this.applyActiveCircuitVisibility()
+    const stepCount = this.getActiveCircuitStepCount()
     this.statusCallback(
-      `Story selected: ${this.getActiveCircuitName()}\n` +
-        "Only this story's path steps are shown."
+      stepCount > 0
+        ? `${this.getActiveCircuitName()} selected.\nReady to follow Step 1/${stepCount}.`
+        : `${this.getActiveCircuitName()} selected.\nNo steps yet. Tap Create Circuit (${this.activeCircuitIndex + 1}) to add Step 1.`
     )
     return this.getActiveCircuitName()
+  }
+
+  selectCircuitWithIntent(index: number): CircuitSelectionIntent {
+    if (index < 0 || index >= DEFAULT_CIRCUITS.length) {
+      const previousCircuit = DEFAULT_CIRCUITS[this.activeCircuitIndex]
+      return {
+        startedFollow: false,
+        needsCreation: !this.hasStepsForCircuit(previousCircuit.id),
+        stepCount: this.getStepCountForCircuit(previousCircuit.id),
+      }
+    }
+
+    this.activeCircuitIndex = index
+    this.followActive = false
+    this.createModeActive = false
+    this.currentCreateStepWidgetIndex = -1
+    this.nextStepIndex = 0
+    this.enteredStepAt = -1
+    this.lastStatusAt = 0
+    this.clearGuide()
+    this.applyActiveCircuitVisibility()
+
+    const stepCount = this.getActiveCircuitStepCount()
+    if (stepCount > 0) {
+      this.startFollowForCurrentCircuit(stepCount, true)
+      return {
+        startedFollow: true,
+        needsCreation: false,
+        stepCount,
+      }
+    }
+
+    this.statusCallback(
+      `${this.getActiveCircuitName()} selected.\nTap Create Circuit (${this.activeCircuitIndex + 1}) to add Step 1.`
+    )
+    return {
+      startedFollow: false,
+      needsCreation: true,
+      stepCount: 0,
+    }
   }
 
   addStep(areaName: string): boolean {
     const circuit = this.getActiveCircuit()
     const activeSteps = this.getStepsForCircuit(circuit.id)
+    const pendingBoxStep = this.getLatestStepMissingObjectFrame(activeSteps)
+    if (pendingBoxStep) {
+      const stepNumber = pendingBoxStep.meta.stepIndex + 1
+      this.statusCallback(
+        `Step ${stepNumber} still needs a box.\nPlace the box before adding Step ${stepNumber + 1}.`
+      )
+      return false
+    }
+    this.revealedCreateNoteWidgetIndex = -1
     const routeSteps = this.getRouteSteps()
     const stepIndex = this.findFirstMissingStepIndex(
       activeSteps,
@@ -151,9 +259,13 @@ export class CircuitController {
     let triggerPosition = target.getTransform().getLocalPosition()
     if (routeStep) {
       triggerPosition = this.getStepFollowPosition(routeStep)
+      const noteOffsetY = Math.max(
+        6,
+        (routeStep.widget.getObjectFrameData()?.size.y ?? 0) * 0.5 + 3.5
+      )
       target
         .getTransform()
-        .setLocalPosition(routeStep.target.getTransform().getLocalPosition())
+        .setLocalPosition(triggerPosition.add(new vec3(0, noteOffsetY, 0)))
       target
         .getTransform()
         .setLocalRotation(routeStep.target.getTransform().getLocalRotation())
@@ -174,6 +286,15 @@ export class CircuitController {
     })
     this.widgetController.refreshWidgetLayout(widget)
 
+    // New authoring flow: each step starts as a placed box + optional note.
+    // Create the box immediately so users can position it first.
+    this.widgetController.toggleObjectFrameForNote(
+      widget,
+      this.storageController,
+      areaName
+    )
+    this.currentCreateStepWidgetIndex = widget.widgetIndex
+
     this.widgetController.saveAllWidgets(this.storageController, areaName)
     this.applyActiveCircuitVisibility()
     if (this.followActive) {
@@ -181,9 +302,9 @@ export class CircuitController {
     }
     this.statusCallback(
       routeStep
-        ? `Added ${circuit.name} content to route step ${stepIndex + 1}.`
-        : `Added route step ${stepIndex + 1} to ${circuit.name}.\n` +
-            "Walk here during playback to trigger it."
+        ? `Step ${stepIndex + 1} is ready in ${circuit.name}.\nPlace the box, then tap Next Step or Finish.`
+        : `Added Step ${stepIndex + 1} to ${circuit.name}.\n` +
+            "Place the box first, then tap Next Step or Finish."
     )
     return true
   }
@@ -195,30 +316,23 @@ export class CircuitController {
       return false
     }
 
-    const steps = this.getStepsForCircuit(this.getActiveCircuit().id)
-    if (steps.length === 0) {
+    const stepCount = this.getActiveCircuitStepCount()
+    if (stepCount === 0) {
       this.statusCallback(
         `${this.getActiveCircuitName()} has no steps yet.\n` +
-          "Add a step at a physical location first."
+          `Tap Create Circuit (${this.activeCircuitIndex + 1}) to add Step 1.`
       )
       return false
     }
 
-    this.followActive = true
-    this.nextStepIndex = 0
-    this.enteredStepAt = -1
-    this.lastStatusAt = 0
-    this.applyActiveCircuitVisibility()
-    this.statusCallback(
-      steps.length < 2
-        ? `${this.getActiveCircuitName()} has one stop.\nAdd another Step+ somewhere else to create a path.`
-        : `Walkthrough started: step 1/${steps.length} is open.\nFollow the yellow guide, then hold there or press Next Step.`
-    )
+    this.startFollowForCurrentCircuit(stepCount, false)
     return true
   }
 
   stopFollow(): void {
     this.followActive = false
+    this.currentCreateStepWidgetIndex = -1
+    this.revealedCreateNoteWidgetIndex = -1
     this.nextStepIndex = 0
     this.enteredStepAt = -1
     this.clearGuide()
@@ -227,7 +341,7 @@ export class CircuitController {
 
   advanceFollowStep(): boolean {
     if (!this.followActive) {
-      this.statusCallback("Start Follow Path to play the route one step at a time.")
+      this.statusCallback("Select a circuit with steps to start following from Step 1.")
       return false
     }
 
@@ -239,7 +353,7 @@ export class CircuitController {
 
     if (this.nextStepIndex >= steps.length) {
       this.finishFollow(
-        `${this.getActiveCircuitName()} complete.\nAll step panels are visible again.`
+        `${this.getActiveCircuitName()} complete.\nAuthoring mode is active again.`
       )
       return true
     }
@@ -252,7 +366,7 @@ export class CircuitController {
     const steps = this.getStepsForCircuit(this.getActiveCircuit().id)
     if (steps.length === 0) {
       this.statusCallback(
-        `${this.getActiveCircuitName()} has no steps yet.\nAdd Step+ first, then use Box+ to highlight an object.`
+        `${this.getActiveCircuitName()} has no steps yet.\nTap Create Circuit (${this.activeCircuitIndex + 1}) to add Step 1 first.`
       )
       return false
     }
@@ -272,6 +386,42 @@ export class CircuitController {
     return true
   }
 
+  revealLatestStepNoteAboveBox(): boolean {
+    const steps = this.getStepsForCircuit(this.getActiveCircuit().id)
+    if (steps.length === 0) {
+      this.statusCallback(
+        `${this.getActiveCircuitName()} has no steps yet.\nTap Create Circuit (${this.activeCircuitIndex + 1}) to add Step 1 first.`
+      )
+      return false
+    }
+
+    const step = steps[steps.length - 1]
+    const frameData = step.widget.getObjectFrameData()
+    if (!frameData || frameData.enabled !== true) {
+      this.statusCallback(
+        `Step ${step.meta.stepIndex + 1} has no box yet.\nPlace the box first, then add note.`
+      )
+      return false
+    }
+
+    const target = this.widgetController.getTransformTargetForWidget(step.widget)
+    if (!target) {
+      this.statusCallback("Could not open note: note panel transform is missing.")
+      return false
+    }
+
+    const yOffset = Math.max(6, frameData.size.y * 0.5 + 3.5)
+    const notePos = this.getStepFollowPosition(step).add(new vec3(0, yOffset, 0))
+    target.getTransform().setLocalPosition(notePos)
+    this.currentCreateStepWidgetIndex = step.widget.widgetIndex
+    this.revealedCreateNoteWidgetIndex = step.widget.widgetIndex
+    this.applyActiveCircuitVisibility()
+    this.statusCallback(
+      `Note opened above Step ${step.meta.stepIndex + 1}.\nWrite your note, then tap Next Step or Finish.`
+    )
+    return true
+  }
+
   update(): boolean {
     if (!this.followActive) return false
 
@@ -287,7 +437,7 @@ export class CircuitController {
         this.lastStatusAt = now
         this.updateGuide(steps)
         this.statusCallback(
-          `${this.getActiveCircuitName()} needs another stop.\nMove to a second location and press Step+.`
+          `${this.getActiveCircuitName()} is following Step 1/${steps.length}.\nAdd another step later if you want a longer route.`
         )
         return true
       }
@@ -296,7 +446,7 @@ export class CircuitController {
 
     if (this.nextStepIndex >= steps.length) {
       this.finishFollow(
-        `${this.getActiveCircuitName()} complete.\nAll step panels are visible again.`
+        `${this.getActiveCircuitName()} complete.\nAuthoring mode is active again.`
       )
       return true
     }
@@ -370,6 +520,16 @@ export class CircuitController {
       }
 
       const meta = note.getCircuitStep()
+      const lockForFollow = !!meta && this.followActive && meta.circuitId === activeId
+      this.widgetController.setWidgetTransformInteractive(note, !lockForFollow)
+      this.widgetController.setObjectFrameInteractiveForNote(note, !lockForFollow)
+      this.widgetController.setNoteEditingEnabled(
+        note,
+        !lockForFollow &&
+          (!this.createModeActive ||
+            note.widgetIndex === this.revealedCreateNoteWidgetIndex)
+      )
+
       if (!meta) {
         target.enabled = true
         this.widgetController.setWidgetAuxiliaryVisibility(widget, true)
@@ -377,8 +537,16 @@ export class CircuitController {
         target.enabled = false
         this.widgetController.setWidgetAuxiliaryVisibility(widget, false)
       } else if (!this.followActive) {
-        target.enabled = true
-        this.widgetController.setWidgetAuxiliaryVisibility(widget, true)
+        if (this.createModeActive) {
+          const isCurrentCreateStep = note.widgetIndex === this.currentCreateStepWidgetIndex
+          target.enabled =
+            isCurrentCreateStep &&
+            note.widgetIndex === this.revealedCreateNoteWidgetIndex
+          this.widgetController.setWidgetAuxiliaryVisibility(widget, isCurrentCreateStep)
+        } else {
+          target.enabled = false
+          this.widgetController.setWidgetAuxiliaryVisibility(widget, false)
+        }
       } else {
         const visible = visibleFollowTargets.has(target)
         target.enabled = visible
@@ -443,6 +611,18 @@ export class CircuitController {
     }
 
     return steps[steps.length - 1]
+  }
+
+  private getLatestStepMissingObjectFrame(
+    steps: CircuitStepRuntime[]
+  ): CircuitStepRuntime | null {
+    if (steps.length === 0) return null
+    const latestStep = steps[steps.length - 1]
+    const frameData = latestStep.widget.getObjectFrameData()
+    if (!frameData || frameData.enabled !== true) {
+      return latestStep
+    }
+    return null
   }
 
   private findFirstMissingStepIndex(
@@ -546,11 +726,31 @@ export class CircuitController {
 
   private finishFollow(message: string): void {
     this.followActive = false
+    this.currentCreateStepWidgetIndex = -1
+    this.revealedCreateNoteWidgetIndex = -1
     this.nextStepIndex = 0
     this.enteredStepAt = -1
     this.clearGuide()
     this.applyActiveCircuitVisibility()
     this.statusCallback(message)
+  }
+
+  private startFollowForCurrentCircuit(stepCount: number, fromCircuitTap: boolean): void {
+    this.followActive = true
+    this.createModeActive = false
+    this.currentCreateStepWidgetIndex = -1
+    this.revealedCreateNoteWidgetIndex = -1
+    this.nextStepIndex = 0
+    this.enteredStepAt = -1
+    this.lastStatusAt = 0
+    this.applyActiveCircuitVisibility()
+    this.statusCallback(
+      stepCount < 2
+        ? `${this.getActiveCircuitName()} follow started at Step 1/${stepCount}.\nAdd another step to create a longer route.`
+        : fromCircuitTap
+          ? `${this.getActiveCircuitName()} follow started at Step 1/${stepCount}.\nFollow the yellow guide.`
+          : `Walkthrough started at Step 1/${stepCount}.\nFollow the yellow guide, then hold there or press Next Step.`
+    )
   }
 
   private getCameraLocalPosition(): vec3 {
@@ -586,6 +786,10 @@ export class CircuitController {
   }
 
   private getStepFollowPosition(step: CircuitStepRuntime): vec3 {
+    const frameData = step.widget.getObjectFrameData()
+    if (frameData && frameData.enabled === true) {
+      return circuitDataToVec3(frameData.position)
+    }
     return step.target.getTransform().getLocalPosition()
   }
 

@@ -5,11 +5,6 @@ import {EventBus} from "../../Shared/EventBus"
 import {addButtonLabel} from "../../Shared/ButtonTextHelper"
 import {DEFAULT_CIRCUITS} from "../../Circuits/CircuitTypes"
 
-const INSTRUCTION_TEXT =
-  "Build the walk, then add story context to each stop."
-const FOLLOW_INSTRUCTION_TEXT =
-  "Walk the route one stop at a time. Story panels reveal as you go."
-
 const WIDGET_TYPE_MAP: Record<string, string> = {
   "Note +": "note",
 }
@@ -26,7 +21,7 @@ interface ButtonConfig {
 }
 
 interface LayerButtonRef {
-  name: string
+  index: number
   btn: RectangleButton
   text: Text
 }
@@ -65,8 +60,18 @@ export class InAreaScreen {
   private lastScanFrame: number = -1
   private areaReady: boolean = false
   private routeSummaryComp: Text | null = null
-  private instructionTextComp: Text | null = null
+  private createCircuitTextComp: Text | null = null
+  private createCircuitButton: RectangleButton | null = null
+  private createModeActive: boolean = false
+  private createModeHeaderComp: Text | null = null
+  private createModeRoots: SceneObject[] = []
+  private followModeRoots: SceneObject[] = []
   private selectedCircuitName: string = DEFAULT_CIRCUITS[0].name
+  private selectedCircuitIndex: number = 0
+  private createCircuitHighlighted: boolean = false
+  private followHeadingComp: Text | null = null
+  private boldFont: Font | null = null
+  private circuitLogoTexture: Texture | null = null
 
   constructor(parent: SceneObject, eventBus: EventBus, logger: Logger) {
     this.eventBus = eventBus
@@ -76,14 +81,15 @@ export class InAreaScreen {
     this.container.setParent(parent)
 
     this.buildLocalizationStatus()
-    this.buildInstructionText()
     this.buildRouteSummary()
-    this.buildPrimaryRow()
+    this.buildFollowHeading()
     this.buildLayerRow()
-    this.buildFollowRow()
-    this.buildUtilityRow()
+    this.buildCreateCircuitButton()
+    this.buildCreateModePanel()
+    this.buildExitButton()
     this.buildScanAnimationTicker()
     this.setCircuitName(DEFAULT_CIRCUITS[0].name)
+    this.setCreateMode(false, 0)
     this.setAreaReady(false)
 
     this.logger.debug("InAreaScreen built")
@@ -122,27 +128,31 @@ export class InAreaScreen {
 
   setCircuitName(name: string): void {
     this.selectedCircuitName = name
+    const idx = DEFAULT_CIRCUITS.findIndex((c) => c.name === name)
+    this.selectedCircuitIndex = idx >= 0 ? idx : 0
     this.applyButtonAvailability()
     this.refreshLayerButtons()
   }
 
   private refreshLayerButtons(): void {
     for (const layer of this.layerButtons) {
-      const active = layer.name === this.selectedCircuitName
-      ;(layer.btn as any)._style = active ? "Primary" : "PrimaryNeutral"
-      layer.text.text = active ? `${layer.name}\nON` : layer.name
-      layer.text.size = active ? 22 : 21
+      const active = layer.index === this.selectedCircuitIndex
+      ;(layer.btn as any)._style = "PrimaryNeutral"
+      layer.text.text = `${layer.index + 1}`
+      layer.text.size = active ? 44 : 40
       layer.text.textFill.color = this.areaReady && !this.followActive
         ? active
-          ? new vec4(1, 0.92, 0.45, 1)
+          ? new vec4(1, 1, 1, 1)
           : new vec4(1, 1, 1, 0.9)
         : new vec4(0.62, 0.66, 0.7, 0.72)
+    }
+    if (this.createCircuitTextComp) {
+      this.createCircuitTextComp.text = `Create Circuit (${this.selectedCircuitIndex + 1})`
     }
   }
 
   setFollowActive(active: boolean): void {
     this.followActive = active
-    this.updateModeCopy()
     this.applyButtonAvailability()
     this.refreshLayerButtons()
     if (this.followTextComp) {
@@ -171,7 +181,7 @@ export class InAreaScreen {
   }
 
   setLocalizationStatus(text: string): void {
-    this.localizationBaseText = text
+    this.localizationBaseText = /area ready \(editor\)/i.test(text) ? "" : text
     this.updateLocalizationVisual(true)
   }
 
@@ -189,6 +199,33 @@ export class InAreaScreen {
     }
   }
 
+  setCreateCircuitHighlighted(highlighted: boolean): void {
+    this.createCircuitHighlighted = highlighted
+    this.applyButtonAvailability()
+  }
+
+  setCreateMode(active: boolean, circuitIndex: number): void {
+    this.createModeActive = active
+    this.selectedCircuitIndex = Math.max(0, circuitIndex)
+    if (this.localizationStatusComp) {
+      this.localizationStatusComp.getSceneObject().enabled = !active
+    }
+    if (this.routeSummaryComp) {
+      this.routeSummaryComp.getSceneObject().enabled = !active
+    }
+    for (let i = 0; i < this.followModeRoots.length; i++) {
+      this.followModeRoots[i].enabled = !active
+    }
+    for (let i = 0; i < this.createModeRoots.length; i++) {
+      this.createModeRoots[i].enabled = active
+    }
+    if (this.createModeHeaderComp) {
+      this.createModeHeaderComp.text = `CREATING CIRCUIT ${this.selectedCircuitIndex + 1}`
+    }
+    this.refreshLayerButtons()
+    this.applyButtonAvailability()
+  }
+
   // ── Internal ───────────────────────────────────────────
 
   private buildLocalizationStatus(): void {
@@ -197,7 +234,7 @@ export class InAreaScreen {
     this.localizationStatusComp = textObj.createComponent("Component.Text") as Text
     this.localizationStatusComp.text = this.localizationBaseText
     this.localizationStatusComp.size = 31
-    this.localizationStatusComp.worldSpaceRect = Rect.create(-20.5, 20.5, -1.75, 1.75)
+    this.localizationStatusComp.worldSpaceRect = Rect.create(-16.5, 16.5, -1.45, 1.45)
     this.localizationStatusComp.horizontalOverflow = HorizontalOverflow.Wrap
     this.localizationStatusComp.verticalOverflow = VerticalOverflow.Shrink
     this.localizationStatusComp.horizontalAlignment = HorizontalAlignment.Center
@@ -205,110 +242,181 @@ export class InAreaScreen {
     this.localizationStatusComp.textFill.mode = TextFillMode.Solid
     this.localizationStatusComp.textFill.color = new vec4(1, 0.85, 0.4, 1)
     this.localizationStatusComp.renderOrder = 10
-    textObj.getTransform().setLocalPosition(new vec3(0, 14.6, 2))
-  }
-
-  private buildInstructionText(): void {
-    const textObj = global.scene.createSceneObject("InAreaInstructions")
-    textObj.setParent(this.container)
-    this.instructionTextComp = textObj.createComponent("Component.Text") as Text
-    this.instructionTextComp.text = INSTRUCTION_TEXT
-    this.instructionTextComp.size = 29
-    this.instructionTextComp.worldSpaceRect = Rect.create(-20.5, 20.5, -1.35, 1.35)
-    this.instructionTextComp.horizontalOverflow = HorizontalOverflow.Wrap
-    this.instructionTextComp.verticalOverflow = VerticalOverflow.Overflow
-    this.instructionTextComp.horizontalAlignment = HorizontalAlignment.Left
-    this.instructionTextComp.verticalAlignment = VerticalAlignment.Center
-    this.instructionTextComp.textFill.mode = TextFillMode.Solid
-    this.instructionTextComp.textFill.color = new vec4(1, 1, 1, 1)
-    this.instructionTextComp.renderOrder = 10
-
-    textObj.getTransform().setLocalPosition(new vec3(0, 11.45, 2))
+    textObj.getTransform().setLocalPosition(new vec3(0, 10.1, 2))
   }
 
   private buildRouteSummary(): void {
     const textObj = global.scene.createSceneObject("CircuitRouteSummary")
     textObj.setParent(this.container)
     this.routeSummaryComp = textObj.createComponent("Component.Text") as Text
-    this.routeSummaryComp.text = "Story 1: no steps yet.\nStep + marks the route. Box+ highlights objects."
-    this.routeSummaryComp.size = 25
-    this.routeSummaryComp.worldSpaceRect = Rect.create(-20.5, 20.5, -1.55, 1.55)
+    this.routeSummaryComp.text = "Authoring · Step 0/0\nNo steps yet. Tap Create Circuit (1) to add Step 1."
+    this.routeSummaryComp.size = 23
+    this.routeSummaryComp.worldSpaceRect = Rect.create(-21.5, 21.5, -2.5, 2.5)
     this.routeSummaryComp.horizontalOverflow = HorizontalOverflow.Wrap
     this.routeSummaryComp.verticalOverflow = VerticalOverflow.Shrink
-    this.routeSummaryComp.horizontalAlignment = HorizontalAlignment.Left
+    this.routeSummaryComp.horizontalAlignment = HorizontalAlignment.Center
     this.routeSummaryComp.verticalAlignment = VerticalAlignment.Center
     this.routeSummaryComp.textFill.mode = TextFillMode.Solid
-    this.routeSummaryComp.textFill.color = new vec4(0.72, 0.95, 1, 0.95)
+    this.routeSummaryComp.textFill.color = new vec4(1, 1, 1, 0.95)
     this.routeSummaryComp.renderOrder = 10
-    textObj.getTransform().setLocalPosition(new vec3(0, 8.45, 2))
+    textObj.getTransform().setLocalPosition(new vec3(0, 7.0, 2))
   }
 
-  private buildPrimaryRow(): void {
-    const primaryButtons: ButtonConfig[] = [
-      {
-        label: "Step +",
-        event: "addCircuitStep",
-        style: "Primary",
-        fontSize: 34,
-        requiresAreaReady: true,
-        disabledWhenFollowing: true,
-      },
-      {
-        label: "Box +",
-        event: "toggleStepObjectFrame",
-        style: "PrimaryNeutral",
-        fontSize: 30,
-        requiresAreaReady: true,
-        disabledWhenFollowing: true,
-      },
-      {
-        label: "Note +",
-        event: "spawnWidget",
-        style: "Primary",
-        fontSize: 34,
-        requiresAreaReady: true,
-        disabledWhenFollowing: true,
-      },
-    ]
-    this.buildGridRow("PrimaryGrid", primaryButtons, new vec3(0, 3.9, 2), new vec2(13.6, 6.4), 3)
+  private buildFollowHeading(): void {
+    const textObj = global.scene.createSceneObject("FollowCircuitHeading")
+    textObj.setParent(this.container)
+    this.followModeRoots.push(textObj)
+    this.followHeadingComp = textObj.createComponent("Component.Text") as Text
+    this.followHeadingComp.text = "FOLLOW CIRCUIT"
+    this.followHeadingComp.size = 54
+    this.followHeadingComp.worldSpaceRect = Rect.create(-14.5, 14.5, -1.2, 1.2)
+    this.followHeadingComp.horizontalOverflow = HorizontalOverflow.Wrap
+    this.followHeadingComp.verticalOverflow = VerticalOverflow.Overflow
+    this.followHeadingComp.horizontalAlignment = HorizontalAlignment.Center
+    this.followHeadingComp.verticalAlignment = VerticalAlignment.Center
+    this.followHeadingComp.textFill.mode = TextFillMode.Solid
+    this.followHeadingComp.textFill.color = new vec4(1, 1, 1, 1)
+    this.followHeadingComp.renderOrder = 10
+    const bold = this.getBoldFont()
+    if (bold) {
+      this.followHeadingComp.font = bold
+    }
+    textObj.getTransform().setLocalPosition(new vec3(0, 4.9, 2))
   }
 
   private buildLayerRow(): void {
-    const layerButtons: ButtonConfig[] = DEFAULT_CIRCUITS.map((circuit, index) => ({
-      label: circuit.name,
+    const layerButtons: ButtonConfig[] = DEFAULT_CIRCUITS.map((_circuit, index) => ({
+      label: `Circuit ${index + 1}`,
       event: "selectCircuit",
-      style: index === 0 ? "Primary" : "PrimaryNeutral",
-      fontSize: 24,
+      style: "PrimaryNeutral",
+      fontSize: 40,
       payload: {index},
       requiresAreaReady: true,
-      disabledWhenFollowing: true,
+      disabledWhenFollowing: false,
     }))
 
-    this.buildGridRow("LayerGrid", layerButtons, new vec3(0, -2.45, 2), new vec2(13.2, 4.7), 3)
+    this.buildGridRow("LayerGrid", layerButtons, new vec3(0, -0.6, 2), new vec2(8.6, 10.2), 3)
   }
 
-  private buildFollowRow(): void {
-    const followButtons: ButtonConfig[] = [
-      {label: "Follow Path", event: "toggleCircuitFollow", fontSize: 26, requiresAreaReady: true},
+  private buildCreateCircuitButton(): void {
+    const createButton: ButtonConfig[] = [
       {
-        label: "Next Step",
-        event: "advanceCircuitStep",
-        fontSize: 25,
+        label: "Create Circuit (1)",
+        event: "startCreateCircuit",
+        style: "PrimaryNeutral",
+        fontSize: 32,
         requiresAreaReady: true,
-        requiresFollowActive: true,
+        disabledWhenFollowing: true,
       },
     ]
-    this.buildGridRow("FollowGrid", followButtons, new vec3(0, -7.35, 2), new vec2(15.5, 4.8), 2)
+    this.buildGridRow(
+      "CreateCircuitGrid",
+      createButton,
+      new vec3(0, -6.3, 2),
+      new vec2(14.6, 4.9),
+      1
+    )
   }
 
-  private buildUtilityRow(): void {
-    const utilityButtons: ButtonConfig[] = [
-      {label: "Gather", event: "recallWidgets", fontSize: 22, requiresAreaReady: true, disabledWhenFollowing: true},
-      {label: "Snap", event: "toggleSnapToSurface", fontSize: 22, requiresAreaReady: true, disabledWhenFollowing: true},
-      {label: "Hide Panel", event: "toggleMainPanelMinimized", fontSize: 20},
-      {label: "Exit", event: "exitArea", fontSize: 22},
-    ]
-    this.buildGridRow("UtilityGrid", utilityButtons, new vec3(0, -12.8, 2), new vec2(10.2, 4.7), 4)
+  private buildCreateModePanel(): void {
+    const headerObj = global.scene.createSceneObject("CreateModeHeading")
+    headerObj.setParent(this.container)
+    this.createModeRoots.push(headerObj)
+    this.createModeHeaderComp = headerObj.createComponent("Component.Text") as Text
+    this.createModeHeaderComp.text = "CREATING CIRCUIT 1"
+    this.createModeHeaderComp.size = 52
+    this.createModeHeaderComp.worldSpaceRect = Rect.create(-16.5, 16.5, -1.3, 1.3)
+    this.createModeHeaderComp.horizontalOverflow = HorizontalOverflow.Wrap
+    this.createModeHeaderComp.verticalOverflow = VerticalOverflow.Overflow
+    this.createModeHeaderComp.horizontalAlignment = HorizontalAlignment.Center
+    this.createModeHeaderComp.verticalAlignment = VerticalAlignment.Center
+    this.createModeHeaderComp.textFill.mode = TextFillMode.Solid
+    this.createModeHeaderComp.textFill.color = new vec4(1, 1, 1, 1)
+    this.createModeHeaderComp.renderOrder = 10
+    const bold = this.getBoldFont()
+    if (bold) {
+      this.createModeHeaderComp.font = bold
+    }
+    headerObj.getTransform().setLocalPosition(new vec3(0, 4.8, 2))
+
+    this.buildGridRow(
+      "CreateModeAddNote",
+      [
+        {
+          label: "Add Note Above",
+          event: "addNoteToCurrentStep",
+          style: "PrimaryNeutral",
+          fontSize: 32,
+          requiresAreaReady: true,
+          disabledWhenFollowing: true,
+        },
+      ],
+      new vec3(0, 0.6, 2),
+      new vec2(13.6, 3.8),
+      1
+    )
+    this.buildGridRow(
+      "CreateModeNext",
+      [
+        {
+          label: "Next Step",
+          event: "nextCreateStep",
+          style: "PrimaryNeutral",
+          fontSize: 34,
+          requiresAreaReady: true,
+          disabledWhenFollowing: true,
+        },
+      ],
+      new vec3(0, -3.0, 2),
+      new vec2(13.6, 3.8),
+      1
+    )
+    this.buildGridRow(
+      "CreateModeFinish",
+      [
+        {
+          label: "Finish",
+          event: "finishCreateCircuit",
+          style: "Primary",
+          fontSize: 34,
+          requiresAreaReady: true,
+          disabledWhenFollowing: true,
+        },
+      ],
+      new vec3(0, -6.6, 2),
+      new vec2(13.6, 3.8),
+      1
+    )
+  }
+
+  private buildExitButton(): void {
+    const exitObj = global.scene.createSceneObject("ExitAreaButton")
+    exitObj.setParent(this.container)
+    exitObj.getTransform().setLocalPosition(new vec3(10.5, 6.7, 2))
+
+    const btn = exitObj.createComponent(RectangleButton.getTypeName()) as RectangleButton
+    ;(btn as any)._style = "Primary"
+    btn.size = new vec3(2.2, 2.2, 1)
+    btn.renderOrder = 10
+    btn.initialize()
+
+    const textComp = addButtonLabel(exitObj, "X", 2.2, 2.2, 30)
+    textComp.textFill.color = new vec4(1, 0.2, 0.2, 1)
+
+    btn.onTriggerUp.add(() => {
+      this.logger.debug("InArea button pressed: Exit")
+      this.eventBus.emit("exitArea")
+    })
+
+    this.buttons.push(btn)
+    this.managedButtons.push({
+      label: "Exit",
+      btn,
+      text: textComp,
+      requiresAreaReady: false,
+      requiresFollowActive: false,
+      disabledWhenFollowing: false,
+    })
   }
 
   private buildGridRow(
@@ -320,6 +428,11 @@ export class InAreaScreen {
   ): void {
     const gridObj = global.scene.createSceneObject(name)
     gridObj.setParent(this.container)
+    if (name === "LayerGrid" || name === "CreateCircuitGrid") {
+      this.followModeRoots.push(gridObj)
+    } else if (name.indexOf("CreateMode") === 0) {
+      this.createModeRoots.push(gridObj)
+    }
     gridObj.getTransform().setLocalPosition(position)
 
     // Create button children FIRST
@@ -330,18 +443,25 @@ export class InAreaScreen {
 
       const btn = btnObj.createComponent(RectangleButton.getTypeName()) as RectangleButton
       ;(btn as any)._style = config.style ?? "PrimaryNeutral"
-      const btnW = cellSize.x - 1
-      const btnH = cellSize.y - 1
+      const isCircuitRow = name === "LayerGrid"
+      const btnW = isCircuitRow ? 6.6 : cellSize.x - 1
+      const btnH = isCircuitRow ? 6.6 : cellSize.y - 1
       btn.size = new vec3(btnW, btnH, 1)
       btn.renderOrder = 10
       btn.initialize()
-      const textComp = addButtonLabel(
-        btnObj,
-        config.label,
-        btnW,
-        btnH,
-        config.fontSize ?? 24
-      )
+      let textComp: Text
+      if (/^Circuit \d+$/.test(config.label)) {
+        const layerIndex = parseInt(config.label.replace("Circuit ", ""), 10) - 1
+        textComp = this.createCircuitBadgeButton(btnObj, btnW, btnH, Math.max(0, layerIndex))
+      } else {
+        textComp = addButtonLabel(
+          btnObj,
+          config.label,
+          btnW,
+          btnH,
+          config.fontSize ?? 24
+        )
+      }
 
       // Track the Minimize/Release button text
       if (config.label === "Gather") {
@@ -352,13 +472,18 @@ export class InAreaScreen {
         this.snapTextComp = textComp
       }
 
-      const layerIndex = DEFAULT_CIRCUITS.findIndex((circuit) => circuit.name === config.label)
-      if (layerIndex >= 0) {
+      if (/^Circuit \d+$/.test(config.label)) {
+        const layerIndex = parseInt(config.label.replace("Circuit ", ""), 10) - 1
         this.layerButtons.push({
-          name: config.label,
+          index: Math.max(0, layerIndex),
           btn,
           text: textComp,
         })
+      }
+
+      if (config.event === "startCreateCircuit") {
+        this.createCircuitTextComp = textComp
+        this.createCircuitButton = btn
       }
 
       if (config.label === "Follow Path") {
@@ -377,6 +502,14 @@ export class InAreaScreen {
         const widgetType = WIDGET_TYPE_MAP[buttonConfig.label]
         if (widgetType) {
           this.eventBus.emit(buttonConfig.event, {type: widgetType})
+        } else if (
+          buttonConfig.event === "selectCircuit" &&
+          buttonConfig.payload &&
+          typeof (buttonConfig.payload as {index?: number}).index === "number"
+        ) {
+          this.selectedCircuitIndex = (buttonConfig.payload as {index: number}).index
+          this.refreshLayerButtons()
+          this.eventBus.emit(buttonConfig.event, buttonConfig.payload)
         } else if (buttonConfig.payload !== undefined) {
           this.eventBus.emit(buttonConfig.event, buttonConfig.payload)
         } else {
@@ -404,6 +537,55 @@ export class InAreaScreen {
     grid.layout()
   }
 
+  private createCircuitBadgeButton(
+    btnObj: SceneObject,
+    btnWidth: number,
+    btnHeight: number,
+    layerIndex: number
+  ): Text {
+    const logoObj = global.scene.createSceneObject("CircuitLogo")
+    logoObj.setParent(btnObj)
+    logoObj.getTransform().setLocalPosition(new vec3(0, 0, 0.08))
+
+    const logo = logoObj.createComponent("Component.Image") as Image
+    const logoSize = Math.min(btnWidth, btnHeight) - 1.8
+    const half = logoSize * 0.5
+    logoObj.getTransform().setLocalScale(new vec3(logoSize, logoSize, 1))
+    logo.renderOrder = 10
+
+    // Runtime-created Image components can have null mainPass until a material is assigned.
+    // If an existing "Circuit Logo" image is present in the scene, reuse its material.
+    const sourceLogoImage = this.findLogoImageInScene()
+    if (sourceLogoImage && sourceLogoImage.mainMaterial) {
+      logo.mainMaterial = sourceLogoImage.mainMaterial
+    }
+
+    const tex = this.getCircuitLogoTexture()
+    if (tex && logo.mainPass) {
+      logo.mainPass.baseTex = tex
+    }
+
+    const numberObj = global.scene.createSceneObject("CircuitNumber")
+    numberObj.setParent(btnObj)
+    numberObj.getTransform().setLocalPosition(new vec3(0, 0, 0.12))
+    const numberText = numberObj.createComponent("Component.Text") as Text
+    numberText.text = `${layerIndex + 1}`
+    numberText.size = 58
+    numberText.worldSpaceRect = Rect.create(-half, half, -half, half)
+    numberText.horizontalOverflow = HorizontalOverflow.Wrap
+    numberText.verticalOverflow = VerticalOverflow.Shrink
+    numberText.horizontalAlignment = HorizontalAlignment.Center
+    numberText.verticalAlignment = VerticalAlignment.Center
+    numberText.textFill.mode = TextFillMode.Solid
+    numberText.textFill.color = new vec4(1, 1, 1, 1)
+    const bold = this.getBoldFont()
+    if (bold) {
+      numberText.font = bold
+    }
+    numberText.renderOrder = 11
+    return numberText
+  }
+
   private buildScanAnimationTicker(): void {
     const tickerObj = global.scene.createSceneObject("InAreaScanTicker")
     tickerObj.setParent(this.container)
@@ -419,7 +601,7 @@ export class InAreaScreen {
     if (!this.localizationStatusComp) return
 
     if (this.areaReady) {
-      this.localizationStatusComp.text = this.localizationBaseText
+      this.localizationStatusComp.text = ""
       this.localizationStatusComp.size = 32
       this.localizationStatusComp.textFill.color = new vec4(0.72, 0.95, 1, 0.96)
       return
@@ -434,6 +616,85 @@ export class InAreaScreen {
       `${this.localizationBaseText}\n${frames[frame]} scanning`
     this.localizationStatusComp.size = 25
     this.localizationStatusComp.textFill.color = new vec4(1, 0.84, 0.38, 1)
+  }
+
+  private getBoldFont(): Font | null {
+    if (this.boldFont) return this.boldFont
+    try {
+      this.boldFont = requireAsset("Fonts/theboldfont.ttf") as Font
+      return this.boldFont
+    } catch (_e) {
+      return null
+    }
+  }
+
+  private getCircuitLogoTexture(): Texture | null {
+    if (this.circuitLogoTexture) return this.circuitLogoTexture
+    const candidates = [
+      "Circuit Logo.png",
+      "Assets/Circuit Logo.png",
+      "../Circuit Logo.png",
+      "../../Circuit Logo.png",
+      "../../../Circuit Logo.png",
+    ]
+    for (let i = 0; i < candidates.length; i++) {
+      try {
+        this.circuitLogoTexture = requireAsset(candidates[i]) as Texture
+        if (this.circuitLogoTexture) {
+          return this.circuitLogoTexture
+        }
+      } catch (_e) {
+        // Continue trying other candidates.
+      }
+    }
+
+    // Fallback: if a scene object named "Circuit Logo" exists and has an Image component,
+    // reuse its currently assigned texture.
+    for (let i = 0; i < global.scene.getRootObjectsCount(); i++) {
+      const root = global.scene.getRootObject(i)
+      const texture = this.findLogoTextureRecursive(root)
+      if (texture) {
+        this.circuitLogoTexture = texture
+        return this.circuitLogoTexture
+      }
+    }
+
+    return null
+  }
+
+  private findLogoTextureRecursive(obj: SceneObject): Texture | null {
+    if (obj.name.toLowerCase().indexOf("circuit logo") !== -1) {
+      const image = obj.getComponent("Component.Image") as Image
+      if (image && image.mainPass && image.mainPass.baseTex) {
+        return image.mainPass.baseTex as Texture
+      }
+    }
+    for (let i = 0; i < obj.getChildrenCount(); i++) {
+      const found = this.findLogoTextureRecursive(obj.getChild(i))
+      if (found) return found
+    }
+    return null
+  }
+
+  private findLogoImageInScene(): Image | null {
+    for (let i = 0; i < global.scene.getRootObjectsCount(); i++) {
+      const root = global.scene.getRootObject(i)
+      const found = this.findLogoImageRecursive(root)
+      if (found) return found
+    }
+    return null
+  }
+
+  private findLogoImageRecursive(obj: SceneObject): Image | null {
+    if (obj.name.toLowerCase().indexOf("circuit logo") !== -1) {
+      const image = obj.getComponent("Component.Image") as Image
+      if (image) return image
+    }
+    for (let i = 0; i < obj.getChildrenCount(); i++) {
+      const found = this.findLogoImageRecursive(obj.getChild(i))
+      if (found) return found
+    }
+    return null
   }
 
   private applyButtonAvailability(): void {
@@ -454,15 +715,22 @@ export class InAreaScreen {
         button.text.textFill.color = enabledColor
       }
     }
+
+    if (this.createCircuitButton && this.createCircuitTextComp) {
+      const canHighlight =
+        this.createCircuitHighlighted &&
+        this.areaReady &&
+        !this.followActive &&
+        !this.createCircuitButton.inactive
+      ;(this.createCircuitButton as any)._style = canHighlight
+        ? "Primary"
+        : "PrimaryNeutral"
+      this.createCircuitTextComp.textFill.color = canHighlight
+        ? new vec4(1, 0.92, 0.45, 1)
+        : this.createCircuitButton.inactive
+          ? disabledColor
+          : enabledColor
+    }
   }
 
-  private updateModeCopy(): void {
-    if (!this.instructionTextComp) return
-    this.instructionTextComp.text = this.followActive
-      ? FOLLOW_INSTRUCTION_TEXT
-      : INSTRUCTION_TEXT
-    this.instructionTextComp.textFill.color = this.followActive
-      ? new vec4(1, 0.92, 0.45, 1)
-      : new vec4(1, 1, 1, 1)
-  }
 }
