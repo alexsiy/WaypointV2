@@ -11,6 +11,7 @@
     - !<own> b5f43359-aaf1-4983-9f67-47dcd7aa5bbf
     - !<own> 12b7e20a-b174-4911-82e3-4b7a4b48d307
     - !<own> 841df896-d8d0-469e-9e99-9c5276d394bc
+    - !<own> a0f665a0-7f13-44af-9a15-f6f122420d18
   layers: !<Layers/267ee9a7-aff2-4f9d-9a49-f71214747d03>
     userLayers:
       []
@@ -802,6 +803,25 @@
     []
   Components:
     - !<own> 14c5f059-6509-430b-81af-1e3d1d1786ee
+- !<Image/40e4f876-9307-437d-86dd-d1f34bd46d4f>
+  PrefabRemaps:
+    []
+  Name: Image
+  Enabled: true
+  RenderOrder: 0
+  StretchMode: Fit
+  VerticalAlignment: Center
+  HorizontalAlignment: Center
+  MeshShadowMode: None
+  ShadowColor: {x: 1.000000, y: 1.000000, z: 1.000000, w: 1.000000}
+  ShadowDensity: 1.000000
+  Materials:
+    - !<reference> e90b1735-8c29-40d4-94f1-aacd2ecadf49
+  FlipX: false
+  FlipY: false
+  RotationAngle: 0
+  Pivot: {x: 0.000000, y: 0.000000}
+  ExtentsTarget: !<reference> 00000000-0000-0000-0000-000000000000
 - !<ScriptComponent/41a9f80c-82ce-4fbb-9262-d0ef6146af54>
   PrefabRemaps:
     []
@@ -1725,6 +1745,21 @@
     []
   Components:
     []
+- !<SceneObject/a0f665a0-7f13-44af-9a15-f6f122420d18>
+  PrefabRemaps:
+    []
+  Name: Circuit Logo
+  Enabled: true
+  Layers: 1
+  LocalTransform: !<TransformEntity>
+    Position: {x: 0.000000, y: 0.000000, z: 0.000000}
+    Rotation: {x: 0.000000, y: 0.000000, z: 0.000000}
+    Scale: {x: 1.000000, y: 1.000000, z: 1.000000}
+    HasSegmentScaleCompensation: false
+  Children:
+    []
+  Components:
+    - !<own> 40e4f876-9307-437d-86dd-d1f34bd46d4f
 - !<SceneObject/a64d55cb-7f31-4546-bdbb-3982726df32e>
   PrefabRemaps:
     []

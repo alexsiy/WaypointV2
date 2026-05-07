@@ -133,6 +133,18 @@ export class ScreenFactory {
     }
   }
 
+  setCreateCircuitHighlighted(highlighted: boolean): void {
+    if (this.inAreaScreen) {
+      this.inAreaScreen.setCreateCircuitHighlighted(highlighted)
+    }
+  }
+
+  setCreateMode(active: boolean, circuitIndex: number): void {
+    if (this.inAreaScreen) {
+      this.inAreaScreen.setCreateMode(active, circuitIndex)
+    }
+  }
+
   // ── Internal builders ──────────────────────────────────
 
   private buildGetStarted(): void {

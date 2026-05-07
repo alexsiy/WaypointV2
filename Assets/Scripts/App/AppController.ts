@@ -10,7 +10,6 @@ import {AnchorController} from "../Anchors/AnchorController"
 import {CaptureFlowManager} from "../Anchors/CaptureFlowManager"
 import {WidgetController} from "../Widgets/WidgetController"
 import {WidgetType} from "../Widgets/WidgetTypes"
-import {NoteWidget} from "../Widgets/Types/NoteWidget"
 import {SnapToSurface} from "../Widgets/Actions/SnapToSurface"
 import {CircuitController} from "../Circuits/CircuitController"
 import {AreaInfo} from "../UI/Components/AreaGridBuilder"
@@ -85,6 +84,7 @@ export class AppController extends BaseScriptComponent {
   private isExiting: boolean = false
   private isNewArea: boolean = false
   private areaReady: boolean = false
+  private createCircuitMode: boolean = false
   private captureTimerHelper: SceneObject | null = null
   private captureStartTime: number = 0
 
@@ -205,7 +205,9 @@ export class AppController extends BaseScriptComponent {
     const updateEvent = this.createEvent("UpdateEvent") as SceneEvent
     updateEvent.bind(() => {
       if (this.currentScreen === AppScreen.InArea) {
-        this.circuitController?.update()
+        if (this.circuitController?.update()) {
+          this.refreshCircuitUi()
+        }
       }
     })
 
@@ -247,6 +249,26 @@ export class AppController extends BaseScriptComponent {
       this.addCircuitStep()
     })
 
+    this.eventBus.on("startCreateCircuit", () => {
+      this.startCreateCircuitMode()
+    })
+
+    this.eventBus.on("nextCreateStep", () => {
+      this.addCircuitStep()
+    })
+
+    this.eventBus.on("addNoteToCurrentStep", () => {
+      this.addNoteToCurrentStep()
+    })
+
+    this.eventBus.on("finishCreateCircuit", () => {
+      this.finishCreateCircuitMode()
+    })
+
+    this.eventBus.on("toggleStepObjectFrame", () => {
+      this.toggleStepObjectFrame()
+    })
+
     this.eventBus.on("nextCircuit", () => {
       this.nextCircuit()
     })
@@ -257,6 +279,14 @@ export class AppController extends BaseScriptComponent {
 
     this.eventBus.on("toggleCircuitFollow", () => {
       this.toggleCircuitFollow()
+    })
+
+    this.eventBus.on("advanceCircuitStep", () => {
+      this.advanceCircuitStep()
+    })
+
+    this.eventBus.on("toggleMainPanelMinimized", () => {
+      this.toggleMainPanelMinimized()
     })
 
     // InAreaScreen "Recall Widgets" button
@@ -539,6 +569,7 @@ export class AppController extends BaseScriptComponent {
 
       case AppScreen.InArea:
         this.lifecycleState = AppLifecycleState.InArea
+        this.createCircuitMode = false
         this.widgetsRestored = false
         this.setAreaReady(false, "Scanning area...\nControls unlock when the route anchor is ready.")
         this.circuitController?.setArea(this.currentAreaName)
@@ -561,9 +592,25 @@ export class AppController extends BaseScriptComponent {
   private refreshCircuitUi(): void {
     if (!this.screenFactory || !this.circuitController) return
 
+    if (this.currentScreen === AppScreen.InArea && this.uiController) {
+      const frame = this.uiController.getFrame()
+      frame.innerSize = this.createCircuitMode
+        ? new vec2(16.8, 13.8)
+        : new vec2(21.5, 12.5)
+    }
+
     this.screenFactory.setCircuitName(this.circuitController.getActiveCircuitName())
     this.screenFactory.setCircuitFollowActive(this.circuitController.isFollowing())
+    this.screenFactory.setCreateMode(
+      this.createCircuitMode,
+      this.circuitController.getActiveCircuitIndex()
+    )
     this.screenFactory.setRouteSummary(this.circuitController.getActiveCircuitSummary())
+    this.screenFactory.setCreateCircuitHighlighted(
+      !this.createCircuitMode &&
+        !this.circuitController.isFollowing() &&
+        this.circuitController.getActiveCircuitStepCount() === 0
+    )
   }
 
   private setAreaReady(ready: boolean, statusText?: string): void {
@@ -797,6 +844,7 @@ export class AppController extends BaseScriptComponent {
     this.snapToSurface.stopSession()
     this.snapToSurfaceActive = false
     this.screenFactory?.setCircuitFollowActive(false)
+    this.uiController?.setPanelMinimized(false)
 
     this.widgetsRestored = false
     this.isExiting = false
@@ -836,12 +884,6 @@ export class AppController extends BaseScriptComponent {
       this.currentAreaName
     )
 
-    if (type === WidgetType.Note && widget) {
-      const note = widget as NoteWidget
-      if (!note.getCircuitStep() && note.getText().length === 0) {
-        note.setText("New note")
-      }
-    }
     this.refreshCircuitUi()
   }
 
@@ -852,7 +894,7 @@ export class AppController extends BaseScriptComponent {
     }
 
     if (!this.ensureAreaReady(
-      "Still scanning this area.\nStep + unlocks once the route anchor is ready."
+      "Still scanning this area.\nCreate Circuit unlocks once the route anchor is ready."
     )) {
       return
     }
@@ -872,23 +914,88 @@ export class AppController extends BaseScriptComponent {
     }
   }
 
-  private nextCircuit(): void {
+  private startCreateCircuitMode(): void {
     if (!this.ensureAreaReady(
-      "Still scanning this area.\nLayers unlock once the saved space is found."
+      "Still scanning this area.\nCreate mode unlocks once the route anchor is ready."
     )) {
       return
     }
+
+    if (!this.currentAreaName) {
+      this.logger.error("Cannot start create mode — no active area")
+      return
+    }
+
+    this.createCircuitMode = true
+    this.circuitController.setCreateModeActive(true)
+    this.addCircuitStep()
+    this.refreshCircuitUi()
+  }
+
+  private finishCreateCircuitMode(): void {
+    this.createCircuitMode = false
+    this.circuitController.setCreateModeActive(false)
+    this.refreshCircuitUi()
+  }
+
+  private addNoteToCurrentStep(): void {
+    if (!this.ensureAreaReady(
+      "Still scanning this area.\nAdd Note unlocks once the route anchor is ready."
+    )) {
+      return
+    }
+    if (this.circuitController.revealLatestStepNoteAboveBox()) {
+      this.refreshCircuitUi()
+    }
+  }
+
+  private toggleStepObjectFrame(): void {
+    if (!this.currentAreaName) {
+      this.logger.error("Cannot toggle object frame — no active area")
+      return
+    }
+
+    if (!this.ensureAreaReady(
+      "Still scanning this area.\nStep box placement unlocks once the route anchor is ready."
+    )) {
+      return
+    }
+
+    if (!this.anchorController.anchor && !global.deviceInfoSystem.isEditor()) {
+      this.logger.warn("Cannot toggle object frame — anchor not saved yet")
+      this.setAreaReady(
+        false,
+        "Area is not ready yet — keep looking and moving around.\nStep box placement unlocks once the anchor is saved."
+      )
+      return
+    }
+
+    if (this.circuitController.toggleObjectFrameForCurrentStep(this.currentAreaName)) {
+      this.refreshCircuitUi()
+    }
+  }
+
+  private nextCircuit(): void {
+    if (!this.ensureAreaReady(
+      "Still scanning this area.\nCircuits unlock once the saved space is found."
+    )) {
+      return
+    }
+    this.createCircuitMode = false
+    this.circuitController.setCreateModeActive(false)
     this.circuitController.nextCircuit()
     this.refreshCircuitUi()
   }
 
   private selectCircuit(index: number): void {
     if (!this.ensureAreaReady(
-      "Still scanning this area.\nLayers unlock once the saved space is found."
+      "Still scanning this area.\nCircuits unlock once the saved space is found."
     )) {
       return
     }
-    this.circuitController.selectCircuit(index)
+    this.createCircuitMode = false
+    this.circuitController.setCreateModeActive(false)
+    this.circuitController.selectCircuitWithIntent(index)
     this.refreshCircuitUi()
   }
 
@@ -898,8 +1005,21 @@ export class AppController extends BaseScriptComponent {
     )) {
       return
     }
+    this.createCircuitMode = false
+    this.circuitController.setCreateModeActive(false)
     this.circuitController.toggleFollow()
     this.refreshCircuitUi()
+  }
+
+  private advanceCircuitStep(): void {
+    if (!this.ensureAreaReady(
+      "Still scanning this area.\nPath playback unlocks when the route anchor is ready."
+    )) {
+      return
+    }
+    if (this.circuitController.advanceFollowStep()) {
+      this.refreshCircuitUi()
+    }
   }
 
   private recallWidgets(): void {
@@ -933,10 +1053,16 @@ export class AppController extends BaseScriptComponent {
     this.screenFactory?.setSnapActive(this.snapToSurfaceActive)
   }
 
+  private toggleMainPanelMinimized(): void {
+    if (!this.uiController) return
+    this.uiController.setPanelMinimized(!this.uiController.isPanelMinimized())
+  }
+
   private deleteAllAreas(): void {
     this.logger.info("deleteAllAreas — clearing all storage")
     this.detachWidgetParentFromAnchor()
     this.circuitController?.stopFollow()
+    this.uiController?.setPanelMinimized(false)
     void this.anchorController.closeSession()
     this.storageController.clearAllAreas()
     this.widgetController.clearAllWidgets()

@@ -12,6 +12,8 @@ const ROUTE_THICKNESS = 1.05
 const ACTIVE_THICKNESS = 1.55
 const LEAD_THICKNESS = 1.35
 const CURVE_SUBDIVISIONS = 6
+const LEAD_IN_VERTICAL_DROP = 26
+const LEAD_IN_TARGET_DROP = 7
 
 export interface CircuitPathGuideStep {
   target: SceneObject
@@ -43,14 +45,15 @@ export class CircuitPathVisualizer {
 
     this.createRouteConnections(steps, activeStepIndex)
 
-    if (userPosition && activeStepIndex >= 0 && activeStepIndex < steps.length) {
+    if (userPosition && activeStepIndex === 0 && activeStepIndex < steps.length) {
       const target = this.getGuidePoint(
         steps[activeStepIndex].target.getTransform().getLocalPosition()
       )
       this.createLeadInConnection(userPosition, target, activeStepIndex, directionHint)
     }
 
-    for (let i = 0; i < steps.length; i++) {
+    const maxVisibleStepIndex = Math.min(activeStepIndex, steps.length - 1)
+    for (let i = 0; i <= maxVisibleStepIndex; i++) {
       const pos = steps[i].target.getTransform().getLocalPosition()
       const state = this.getStepState(i, activeStepIndex)
       this.createStepPin(`${i + 1}`, pos, state, i, steps.length)
@@ -74,14 +77,18 @@ export class CircuitPathVisualizer {
     if (!this.root || steps.length < 2) return
 
     const allStepsVisited = activeStepIndex >= steps.length
-    const activeSegmentIndex = activeStepIndex <= 0 ? 0 : activeStepIndex - 1
+    const activeSegmentIndex = allStepsVisited
+      ? steps.length - 2
+      : activeStepIndex - 1
 
     for (let i = 0; i < steps.length - 1; i++) {
+      if (i > activeSegmentIndex) continue
+
       const start = this.getGuidePoint(steps[i].target.getTransform().getLocalPosition())
       const end = this.getGuidePoint(steps[i + 1].target.getTransform().getLocalPosition())
       const isActive = !allStepsVisited && i === activeSegmentIndex
       const isVisited = allStepsVisited || i < activeSegmentIndex
-      const color = isActive ? ACTIVE_COLOR : isVisited ? VISITED_COLOR : UPCOMING_COLOR
+      const color = isActive ? ACTIVE_COLOR : VISITED_COLOR
       const thickness = isActive ? ACTIVE_THICKNESS : ROUTE_THICKNESS
 
       this.createCurvedConnection(
@@ -112,28 +119,30 @@ export class CircuitPathVisualizer {
   ): void {
     if (!this.root) return
 
-    const delta = target.sub(userPosition)
-    const distance = userPosition.distance(target)
+    const loweredUserPosition = userPosition.add(new vec3(0, -LEAD_IN_VERTICAL_DROP, 0))
+    const loweredTarget = target.add(new vec3(0, -LEAD_IN_TARGET_DROP, 0))
+    const delta = loweredTarget.sub(loweredUserPosition)
+    const distance = loweredUserPosition.distance(loweredTarget)
     if (distance < 8) return
 
     const leadStart = distance > 45
-      ? userPosition.add(delta.normalize().uniformScale(32))
-      : userPosition
+      ? loweredUserPosition.add(delta.normalize().uniformScale(32))
+      : loweredUserPosition
 
     this.createCurvedConnection(
       leadStart,
-      target,
+      loweredTarget,
       ACTIVE_COLOR,
       LEAD_THICKNESS,
       "LeadIn",
-      0.055,
-      0.02
+      0.025,
+      0.015
     )
 
     const callout = directionHint
       ? `STEP ${activeStepIndex + 1}\n${directionHint}`
       : `STEP ${activeStepIndex + 1}\nFollow yellow line`
-    const labelPos = leadStart.add(target).uniformScale(0.5).add(new vec3(0, 12, 5.5))
+    const labelPos = leadStart.add(loweredTarget).uniformScale(0.5).add(new vec3(0, 4, 4))
     this.createTextMarker(callout, labelPos, 24, ACTIVE_COLOR, new vec2(15, 3.2))
   }
 

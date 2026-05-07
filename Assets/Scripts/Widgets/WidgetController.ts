@@ -5,7 +5,7 @@ import {findAllComponentsInSelfOrChildren} from "SpectaclesInteractionKit.lspkg/
 import {Logger} from "Utilities.lspkg/Scripts/Utils/Logger"
 import {WidgetBase} from "./WidgetBase"
 import {WidgetType} from "./WidgetTypes"
-import {NoteWidget} from "./Types/NoteWidget"
+import {NoteObjectFrameData, NoteWidget} from "./Types/NoteWidget"
 import {WatchWidget} from "./Types/WatchWidget"
 import {PhotoWidget} from "./Types/PhotoWidget"
 import {CAMERA_GAZE_OFFSET} from "../Shared/Constants"
@@ -31,6 +31,18 @@ const WIDGET_FRAME_SIZES: Record<WidgetType, vec2> = {
   [WidgetType.Photo]: new vec2(14, 14),
 }
 
+const OBJECT_FRAME_MATERIAL = requireAsset("../../Materials/WidgetSelectionUIBackground.mat") as Material
+const OBJECT_FRAME_DEFAULT_SIZE = new vec2(28, 22)
+const OBJECT_FRAME_COLOR = new vec4(1, 0.86, 0.22, 0.95)
+const OBJECT_FRAME_EDGE_THICKNESS = 0.65
+
+interface ObjectFrameRuntime {
+  root: SceneObject
+  frame: Frame
+  outlineRoot: SceneObject
+  edges: SceneObject[]
+}
+
 export class WidgetController {
   private static instance: WidgetController
 
@@ -48,6 +60,9 @@ export class WidgetController {
 
   // Map widgetIndex → Frame component (for listening to translation events, etc.)
   private frameMap: Map<number, Frame> = new Map()
+
+  // Map widgetIndex → separate spatial object outline owned by a note/step.
+  private objectFrameMap: Map<number, ObjectFrameRuntime> = new Map()
 
   // Recall/minimize state: save transforms before minimize, restore on release
   private recallActive: boolean = false
@@ -249,6 +264,10 @@ export class WidgetController {
         this.refreshWidgetLayout(widget)
       }
 
+      if (widget.widgetType === WidgetType.Note) {
+        this.syncObjectFrameForNote(widget as NoteWidget, storageCtrl, areaName)
+      }
+
       const frameObj = this.getTransformTarget(widget)
       if (frameObj) {
         const t = frameObj.getTransform()
@@ -358,6 +377,7 @@ export class WidgetController {
     this.wrapperMap.clear()
     this.frameObjMap.clear()
     this.frameMap.clear()
+    this.objectFrameMap.clear()
     this.nextIndex = 0
     this.recallActive = false
     this.savedPositions.clear()
@@ -486,6 +506,55 @@ export class WidgetController {
     return this.frameObjMap.get(widget.widgetIndex)
   }
 
+  setWidgetAuxiliaryVisibility(widget: WidgetBase, visible: boolean): void {
+    const objectFrame = this.objectFrameMap.get(widget.widgetIndex)
+    if (!objectFrame) return
+
+    const note = widget.widgetType === WidgetType.Note
+      ? (widget as NoteWidget)
+      : null
+    const frameEnabled = note?.getObjectFrameData()?.enabled === true
+    objectFrame.root.enabled = visible && frameEnabled
+  }
+
+  setWidgetTransformInteractive(widget: WidgetBase, interactive: boolean): void {
+    const frame = this.frameMap.get(widget.widgetIndex)
+    if (!frame) return
+    frame.allowTranslation = interactive
+    frame.allowScaling = false
+  }
+
+  setNoteEditingEnabled(note: NoteWidget, enabled: boolean): void {
+    note.setEditingEnabled(enabled)
+  }
+
+  setObjectFrameInteractiveForNote(note: NoteWidget, interactive: boolean): void {
+    const runtime = this.objectFrameMap.get(note.widgetIndex)
+    if (!runtime) return
+    runtime.frame.allowTranslation = interactive
+    runtime.frame.allowScaling = interactive
+    runtime.frame.allowNonUniformScaling = interactive
+  }
+
+  toggleObjectFrameForNote(
+    note: NoteWidget,
+    storageCtrl: StorageController,
+    areaName: string
+  ): boolean {
+    const current = note.getObjectFrameData()
+    if (current?.enabled) {
+      this.destroyObjectFrame(note.widgetIndex)
+      note.setObjectFrameData(null)
+      return false
+    }
+
+    const data = this.createDefaultObjectFrameData()
+    note.setObjectFrameData(data, false)
+    this.createObjectFrameForNote(note, data, storageCtrl, areaName)
+    note.setObjectFrameData(this.readObjectFrameData(note) ?? data)
+    return true
+  }
+
   refreshWidgetLayout(widget: WidgetBase): void {
     const frame = this.frameMap.get(widget.widgetIndex)
     if (!frame) return
@@ -509,6 +578,249 @@ export class WidgetController {
     return this.frameObjMap.get(w.widgetIndex)
   }
 
+  private syncObjectFrameForNote(
+    note: NoteWidget,
+    storageCtrl: StorageController,
+    areaName: string
+  ): void {
+    const data = note.getObjectFrameData()
+    if (data?.enabled) {
+      this.createObjectFrameForNote(note, data, storageCtrl, areaName)
+    } else {
+      this.destroyObjectFrame(note.widgetIndex)
+    }
+  }
+
+  private createObjectFrameForNote(
+    note: NoteWidget,
+    data: NoteObjectFrameData,
+    storageCtrl: StorageController,
+    areaName: string
+  ): void {
+    this.destroyObjectFrame(note.widgetIndex)
+
+    const root = global.scene.createSceneObject(`ObjectFrame_${note.widgetIndex}`)
+    root.setParent(this.widgetParent)
+    root.getTransform().setLocalPosition(this.dataToVec3(data.position))
+    root.getTransform().setLocalRotation(
+      quat.fromEulerAngles(
+        data.rotation.x,
+        data.rotation.y,
+        data.rotation.z
+      )
+    )
+
+    const frame = root.createComponent(Frame.getTypeName()) as Frame
+    ;(frame as any).autoShowHide = false
+    ;(frame as any).useBillboarding = true
+    ;(frame as any).xOnTranslate = true
+    ;(frame as any).yOnTranslate = true
+    ;(frame as any)._onlyInteractOnBorder = true
+    ;(frame as any)._allowScaling = true
+    ;(frame as any).allowNonUniformScaling = true
+    ;(frame as any)._appearance = "Small"
+    ;(frame as any)._innerSize = new vec2(data.size.x, data.size.y)
+    ;(frame as any)._padding = new vec2(0, 0)
+    ;(frame as any)._cutOutCenter = true
+    frame.allowTranslation = true
+    frame.initialize()
+    frame.allowTranslation = true
+    frame.allowScaling = true
+    frame.allowNonUniformScaling = true
+    frame.innerSize = new vec2(data.size.x, data.size.y)
+    frame.padding = new vec2(0, 0)
+    frame.cutOutCenter = true
+    frame.border = 3
+    frame.renderOrder = 18
+    frame.roundedRectangle.renderMeshVisual.enabled = false
+
+    frame.onTranslationEnd.add(() => {
+      this.persistObjectFrameState(note, storageCtrl, areaName)
+    })
+    frame.onScalingUpdate.add(() => {
+      const runtime = this.objectFrameMap.get(note.widgetIndex)
+      if (runtime) {
+        this.hideNativeObjectFrameVisual(runtime.frame)
+        this.updateObjectFrameOutline(runtime)
+      }
+    })
+    frame.onScalingEnd.add(() => {
+      const runtime = this.objectFrameMap.get(note.widgetIndex)
+      if (runtime) {
+        this.hideNativeObjectFrameVisual(runtime.frame)
+        this.updateObjectFrameOutline(runtime)
+      }
+      this.persistObjectFrameState(note, storageCtrl, areaName)
+    })
+    frame.onSnappingComplete.add(() => {
+      this.persistObjectFrameState(note, storageCtrl, areaName)
+    })
+
+    const outlineRoot = global.scene.createSceneObject(`ObjectFrameOutline_${note.widgetIndex}`)
+    outlineRoot.setParent(root)
+    outlineRoot.getTransform().setLocalPosition(new vec3(0, 0, 0.85))
+    const runtime = {
+      root,
+      frame,
+      outlineRoot,
+      edges: this.createObjectFrameEdges(outlineRoot),
+    }
+    this.objectFrameMap.set(note.widgetIndex, runtime)
+    this.hideNativeObjectFrameVisual(frame)
+    this.updateObjectFrameOutline(runtime)
+  }
+
+  private persistObjectFrameState(
+    note: NoteWidget,
+    storageCtrl: StorageController,
+    areaName: string
+  ): void {
+    const data = this.readObjectFrameData(note)
+    if (!data) return
+
+    note.setObjectFrameData(data, false)
+    this.saveAllWidgets(storageCtrl, areaName)
+  }
+
+  private readObjectFrameData(note: NoteWidget): NoteObjectFrameData | null {
+    const objectFrame = this.objectFrameMap.get(note.widgetIndex)
+    if (!objectFrame) return null
+
+    const transform = objectFrame.root.getTransform()
+    return {
+      enabled: true,
+      position: this.vec3ToData(transform.getLocalPosition()),
+      rotation: this.vec3ToData(transform.getLocalRotation().toEulerAngles()),
+      size: {
+        x: objectFrame.frame.innerSize.x,
+        y: objectFrame.frame.innerSize.y,
+      },
+    }
+  }
+
+  private createDefaultObjectFrameData(): NoteObjectFrameData {
+    const camTransform = WorldCameraFinderProvider.getInstance().getTransform()
+    const camPos = camTransform.getWorldPosition()
+    const camRot = camTransform.getWorldRotation()
+    const forward = camRot.multiplyVec3(new vec3(0, 0, -1))
+    const spawnPos = camPos.add(forward.uniformScale(CAMERA_GAZE_OFFSET))
+
+    const parentTransform = this.widgetParent.getTransform()
+    const parentWorldPos = parentTransform.getWorldPosition()
+    const parentWorldRot = parentTransform.getWorldRotation()
+    const invParentRot = parentWorldRot.invert()
+    const localPos = invParentRot.multiplyVec3(spawnPos.sub(parentWorldPos))
+    const localRot = invParentRot.multiply(camRot)
+
+    return {
+      enabled: true,
+      position: this.vec3ToData(localPos),
+      rotation: this.vec3ToData(localRot.toEulerAngles()),
+      size: {
+        x: OBJECT_FRAME_DEFAULT_SIZE.x,
+        y: OBJECT_FRAME_DEFAULT_SIZE.y,
+      },
+    }
+  }
+
+  private destroyObjectFrame(widgetIndex: number): void {
+    const objectFrame = this.objectFrameMap.get(widgetIndex)
+    if (!objectFrame) return
+    objectFrame.root.destroy()
+    this.objectFrameMap.delete(widgetIndex)
+  }
+
+  private hideNativeObjectFrameVisual(frame: Frame): void {
+    try {
+      frame.roundedRectangle.renderMeshVisual.enabled = false
+    } catch (_) {}
+  }
+
+  private createObjectFrameEdges(parent: SceneObject): SceneObject[] {
+    const names = ["Top", "Bottom", "Left", "Right"]
+    return names.map((name) => {
+      const edge = global.scene.createSceneObject(`ObjectFrameEdge_${name}`)
+      edge.setParent(parent)
+
+      const visual = edge.createComponent("Component.RenderMeshVisual") as RenderMeshVisual
+      visual.mesh = this.createQuadMesh()
+      visual.mainMaterial = OBJECT_FRAME_MATERIAL.clone()
+      visual.mainMaterial.mainPass.baseColor = OBJECT_FRAME_COLOR
+      visual.mainMaterial.mainPass.depthTest = false
+      visual.mainMaterial.mainPass.twoSided = true
+      visual.setRenderOrder(22)
+      return edge
+    })
+  }
+
+  private updateObjectFrameOutline(runtime: ObjectFrameRuntime): void {
+    const width = Math.max(8, runtime.frame.innerSize.x)
+    const height = Math.max(8, runtime.frame.innerSize.y)
+    const thickness = OBJECT_FRAME_EDGE_THICKNESS
+    const [top, bottom, left, right] = runtime.edges
+
+    this.layoutObjectFrameEdge(
+      top,
+      new vec3(0, height * 0.5, 0),
+      new vec3(width + thickness, thickness, 1)
+    )
+    this.layoutObjectFrameEdge(
+      bottom,
+      new vec3(0, -height * 0.5, 0),
+      new vec3(width + thickness, thickness, 1)
+    )
+    this.layoutObjectFrameEdge(
+      left,
+      new vec3(-width * 0.5, 0, 0),
+      new vec3(thickness, height + thickness, 1)
+    )
+    this.layoutObjectFrameEdge(
+      right,
+      new vec3(width * 0.5, 0, 0),
+      new vec3(thickness, height + thickness, 1)
+    )
+  }
+
+  private layoutObjectFrameEdge(
+    edge: SceneObject,
+    position: vec3,
+    scale: vec3
+  ): void {
+    const transform = edge.getTransform()
+    transform.setLocalPosition(position)
+    transform.setLocalScale(scale)
+  }
+
+  private createQuadMesh(): RenderMesh {
+    const builder = new MeshBuilder([
+      {name: "position", components: 3},
+      {name: "normal", components: 3},
+    ])
+    builder.topology = MeshTopology.Triangles
+    builder.indexType = MeshIndexType.UInt16
+    builder.appendVerticesInterleaved([
+      -0.5, -0.5, 0, 0, 0, 1,
+      0.5, -0.5, 0, 0, 0, 1,
+      0.5, 0.5, 0, 0, 0, 1,
+      -0.5, 0.5, 0, 0, 0, 1,
+    ])
+    builder.appendIndices([0, 1, 2, 0, 2, 3])
+    builder.updateMesh()
+    return builder.getMesh()
+  }
+
+  private vec3ToData(value: vec3): {x: number; y: number; z: number} {
+    return {
+      x: value.x,
+      y: value.y,
+      z: value.z,
+    }
+  }
+
+  private dataToVec3(value: {x: number; y: number; z: number}): vec3 {
+    return new vec3(value.x, value.y, value.z)
+  }
+
   private applyCompactWidgetLayout(type: WidgetType, widget: WidgetBase): void {
     if (type === WidgetType.Note) {
       ;(widget as NoteWidget).applyCompactLayout()
@@ -528,6 +840,7 @@ export class WidgetController {
     if (!widget) return
 
     this.logger.info(`removeWidget index=${index}`)
+    this.destroyObjectFrame(index)
     const wrapper = this.wrapperMap.get(index)
     if (wrapper) {
       wrapper.destroy()
