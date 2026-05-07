@@ -174,6 +174,10 @@ export class GetStartedScreen {
     btn.initialize()
     addButtonLabel(btnObj, label, size.x, size.y, 25)
     btn.onTriggerUp.add(() => {
+      if (name === "StartCircuitButton") {
+        this.eventBus.emit("startCircuit")
+        return
+      }
       this.eventBus.emit("navigate", targetScreen)
     })
 

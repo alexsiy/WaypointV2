@@ -14,10 +14,16 @@ const LEAD_THICKNESS = 1.35
 const CURVE_SUBDIVISIONS = 6
 const LEAD_IN_VERTICAL_DROP = 26
 const LEAD_IN_TARGET_DROP = 7
+const GUIDE_TUBE_RENDER_ORDER = 30
+const GUIDE_DISC_RENDER_ORDER = 32
+const GUIDE_TEXT_RENDER_ORDER = 34
 
 export interface CircuitPathGuideStep {
   target: SceneObject
   meta: CircuitStepMeta
+  guidePosition?: vec3
+  pinCenter?: vec3
+  pinRotation?: quat
 }
 
 export class CircuitPathVisualizer {
@@ -46,17 +52,23 @@ export class CircuitPathVisualizer {
     this.createRouteConnections(steps, activeStepIndex)
 
     if (userPosition && activeStepIndex === 0 && activeStepIndex < steps.length) {
-      const target = this.getGuidePoint(
-        steps[activeStepIndex].target.getTransform().getLocalPosition()
-      )
+      const target = this.getGuidePoint(this.getStepPosition(steps[activeStepIndex]))
       this.createLeadInConnection(userPosition, target, activeStepIndex, directionHint)
     }
 
     const maxVisibleStepIndex = Math.min(activeStepIndex, steps.length - 1)
     for (let i = 0; i <= maxVisibleStepIndex; i++) {
-      const pos = steps[i].target.getTransform().getLocalPosition()
+      const pos = this.getStepPosition(steps[i])
       const state = this.getStepState(i, activeStepIndex)
-      this.createStepPin(`${i + 1}`, pos, state, i, steps.length)
+      this.createStepPin(
+        `${i + 1}`,
+        pos,
+        state,
+        i,
+        steps.length,
+        steps[i].pinCenter,
+        steps[i].pinRotation
+      )
     }
 
     this.logger.debug(
@@ -84,8 +96,8 @@ export class CircuitPathVisualizer {
     for (let i = 0; i < steps.length - 1; i++) {
       if (i > activeSegmentIndex) continue
 
-      const start = this.getGuidePoint(steps[i].target.getTransform().getLocalPosition())
-      const end = this.getGuidePoint(steps[i + 1].target.getTransform().getLocalPosition())
+      const start = this.getGuidePoint(this.getStepPosition(steps[i]))
+      const end = this.getGuidePoint(this.getStepPosition(steps[i + 1]))
       const isActive = !allStepsVisited && i === activeSegmentIndex
       const isVisited = allStepsVisited || i < activeSegmentIndex
       const color = isActive ? ACTIVE_COLOR : VISITED_COLOR
@@ -178,7 +190,9 @@ export class CircuitPathVisualizer {
     pos: vec3,
     state: "active" | "visited" | "upcoming",
     index: number,
-    total: number
+    total: number,
+    pinCenterOverride?: vec3,
+    pinRotation?: quat
   ): void {
     if (!this.root) return
 
@@ -198,38 +212,55 @@ export class CircuitPathVisualizer {
             : index === total - 1
               ? "FINISH"
               : "STEP"
-    const pinCenter = pos.add(new vec3(0, 8.5, 4.5))
+    const pinCenter = pinCenterOverride ?? pos.add(new vec3(0, 8.5, 4.5))
     const stemStart = this.getGuidePoint(pos)
-    const stemEnd = pinCenter.add(new vec3(0, -2.9, 0))
+    const stemEnd = pinCenter.add(this.orientOffset(new vec3(0, -2.9, 0), pinRotation))
     const pinSize = state === "active" ? 5.2 : 4.4
 
     this.createTubeSegment(stemStart, stemEnd, color, 0.62, `PinStem_${label}`)
-    this.createDisc(pinCenter, color, pinSize, `Pin_${label}`)
-    this.createDisc(pinCenter.add(new vec3(0, 0, 0.08)), PIN_DARK_COLOR, pinSize * 0.62, `PinInner_${label}`)
+    this.createDisc(pinCenter, color, pinSize, `Pin_${label}`, pinRotation)
+    this.createDisc(
+      pinCenter.add(this.orientOffset(new vec3(0, 0, 0.08), pinRotation)),
+      PIN_DARK_COLOR,
+      pinSize * 0.62,
+      `PinInner_${label}`,
+      pinRotation
+    )
 
     this.createTextMarker(
       label,
-      pinCenter.add(new vec3(0, 0.05, 0.25)),
+      pinCenter.add(this.orientOffset(new vec3(0, 0.05, 0.25), pinRotation)),
       state === "active" ? 34 : 28,
       color,
-      new vec2(pinSize, pinSize * 0.78)
+      new vec2(pinSize, pinSize * 0.78),
+      pinRotation
     )
 
     this.createTextMarker(
       prefix,
-      pinCenter.add(new vec3(0, pinSize * 0.78, 0.15)),
+      pinCenter.add(this.orientOffset(new vec3(0, pinSize * 0.78, 0.15), pinRotation)),
       state === "active" ? 20 : 17,
       color,
-      new vec2(7.5, 1.4)
+      new vec2(7.5, 1.4),
+      pinRotation
     )
   }
 
-  private createDisc(position: vec3, color: vec4, diameter: number, name: string): void {
+  private createDisc(
+    position: vec3,
+    color: vec4,
+    diameter: number,
+    name: string,
+    rotation?: quat
+  ): void {
     if (!this.root) return
 
     const obj = global.scene.createSceneObject(name)
     obj.setParent(this.root)
     obj.getTransform().setLocalPosition(position)
+    if (rotation) {
+      obj.getTransform().setLocalRotation(rotation)
+    }
 
     const mesh = this.createDiscMesh(diameter * 0.5, 28)
     const visual = obj.createComponent("Component.RenderMeshVisual") as RenderMeshVisual
@@ -237,7 +268,7 @@ export class CircuitPathVisualizer {
     visual.mainMaterial = GUIDE_MATERIAL.clone()
     visual.mainMaterial.mainPass.baseColor = color
     visual.mainMaterial.mainPass.depthTest = false
-    visual.setRenderOrder(15)
+    visual.setRenderOrder(GUIDE_DISC_RENDER_ORDER)
   }
 
   private createTubeSegment(
@@ -264,7 +295,7 @@ export class CircuitPathVisualizer {
     visual.mainMaterial = GUIDE_MATERIAL.clone()
     visual.mainMaterial.mainPass.baseColor = color
     visual.mainMaterial.mainPass.depthTest = false
-    visual.setRenderOrder(13)
+    visual.setRenderOrder(GUIDE_TUBE_RENDER_ORDER)
   }
 
   private createTubeMesh(length: number, radius: number, sides: number): RenderMesh {
@@ -335,13 +366,17 @@ export class CircuitPathVisualizer {
     position: vec3,
     size: number,
     color: vec4,
-    rectSize: vec2
+    rectSize: vec2,
+    rotation?: quat
   ): void {
     if (!this.root) return
 
     const obj = global.scene.createSceneObject(`Guide_${text.replace(/\s/g, "_")}`)
     obj.setParent(this.root)
     obj.getTransform().setLocalPosition(position)
+    if (rotation) {
+      obj.getTransform().setLocalRotation(rotation)
+    }
 
     const textComp = obj.createComponent("Component.Text") as Text
     textComp.text = text
@@ -358,11 +393,19 @@ export class CircuitPathVisualizer {
     textComp.verticalAlignment = VerticalAlignment.Center
     textComp.textFill.mode = TextFillMode.Solid
     textComp.textFill.color = color
-    textComp.renderOrder = 16
+    textComp.renderOrder = GUIDE_TEXT_RENDER_ORDER
   }
 
   private getGuidePoint(pos: vec3): vec3 {
     return pos.add(new vec3(0, 2.4, 3.2))
+  }
+
+  private getStepPosition(step: CircuitPathGuideStep): vec3 {
+    return step.guidePosition ?? step.target.getTransform().getLocalPosition()
+  }
+
+  private orientOffset(offset: vec3, rotation?: quat): vec3 {
+    return rotation ? rotation.multiplyVec3(offset) : offset
   }
 
   private buildCurvedPoints(

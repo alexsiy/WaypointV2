@@ -6,6 +6,8 @@ import {Logger} from "Utilities.lspkg/Scripts/Utils/Logger"
 import {WidgetData} from "../App/AppState"
 import {
   areasMapKey,
+  lastAreaKey,
+  lastCircuitKey,
   widgetKey,
   TRANSFORM_KEY,
   TYPE_KEY,
@@ -92,6 +94,7 @@ export class StorageController {
         this.clearWidgets(name)
       }
       this.persistentStorage.putString(areasMapKey(), JSON.stringify({}))
+      this.persistentStorage.putString(lastAreaKey(), "")
       // Clear the spatial anchor model state — stale location references
       // cause crashes in LocationAsset.fromSerialized() on next session
       this.persistentStorage.putString("locationModelState", "")
@@ -104,6 +107,51 @@ export class StorageController {
   /** Returns the number of currently saved areas. */
   getAreaCount(): number {
     return Object.keys(this.getAreas()).length
+  }
+
+  /** Persists the last area entered from the start/resume flow. */
+  saveLastAreaName(areaName: string): void {
+    try {
+      this.persistentStorage.putString(lastAreaKey(), areaName)
+      this.logger.info(`Saved last area "${areaName}"`)
+    } catch (e) {
+      this.logger.error(`Error saving last area: ${e}`)
+    }
+  }
+
+  /** Returns the last opened area name, if it still exists. */
+  getLastAreaName(): string | null {
+    try {
+      const name = this.persistentStorage.getString(lastAreaKey())
+      if (!name || name === "") return null
+      const areas = this.getAreas()
+      return name in areas ? name : null
+    } catch (e) {
+      this.logger.error(`Error loading last area: ${e}`)
+      return null
+    }
+  }
+
+  /** Persists the last selected circuit index for an area. */
+  saveLastCircuitIndex(areaName: string, index: number): void {
+    try {
+      this.persistentStorage.putString(lastCircuitKey(areaName), `${index}`)
+    } catch (e) {
+      this.logger.error(`Error saving last circuit: ${e}`)
+    }
+  }
+
+  /** Returns the last selected circuit index for an area. */
+  getLastCircuitIndex(areaName: string): number | null {
+    try {
+      const raw = this.persistentStorage.getString(lastCircuitKey(areaName))
+      if (!raw || raw === "") return null
+      const parsed = parseInt(raw, 10)
+      return isNaN(parsed) ? null : parsed
+    } catch (e) {
+      this.logger.error(`Error loading last circuit: ${e}`)
+      return null
+    }
   }
 
   // -------------------------------------------------------
@@ -180,6 +228,7 @@ export class StorageController {
       this.persistentStorage.remove(widgetKey(areaName, TYPE_KEY))
       this.persistentStorage.remove(widgetKey(areaName, CONTENT_KEY))
       this.persistentStorage.remove(widgetKey(areaName, ANCHOR_POSE_KEY))
+      this.persistentStorage.remove(lastCircuitKey(areaName))
       this.logger.info(`Cleared widgets for area "${areaName}"`)
     } catch (e) {
       this.logger.error(`Error clearing widgets: ${e}`)

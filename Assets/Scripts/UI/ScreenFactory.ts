@@ -105,7 +105,21 @@ export class ScreenFactory {
     }
   }
 
-  /** Convenience: update Follow Path button label on InArea screen. */
+  /** Convenience: update per-story availability on InArea screen. */
+  setCircuitStepCounts(counts: number[]): void {
+    if (this.inAreaScreen) {
+      this.inAreaScreen.setCircuitStepCounts(counts)
+    }
+  }
+
+  /** Convenience: enable Follow only when the selected story has steps. */
+  setCircuitFollowAvailable(available: boolean): void {
+    if (this.inAreaScreen) {
+      this.inAreaScreen.setFollowAvailable(available)
+    }
+  }
+
+  /** Convenience: update Follow button label on InArea screen. */
   setCircuitFollowActive(active: boolean): void {
     if (this.inAreaScreen) {
       this.inAreaScreen.setFollowActive(active)

@@ -20,6 +20,12 @@ export const CONTENT_KEY: string = "CONTENT_KEY"
 /** Sub-key for the saved anchor pose (widgetParent world transform). */
 export const ANCHOR_POSE_KEY: string = "ANCHOR_POSE_KEY"
 
+/** Sub-key for the last area opened from the home/start flow. */
+export const LAST_AREA_KEY: string = "LAST_AREA_KEY"
+
+/** Sub-key for the last selected story/circuit within an area. */
+export const LAST_CIRCUIT_KEY: string = "LAST_CIRCUIT_KEY"
+
 /**
  * Returns the storage key prefix scoped to a specific area.
  * @param areaName - The human-readable area/space name.
@@ -45,4 +51,21 @@ export function widgetKey(areaName: string, subKey: string): string {
  */
 export function areasMapKey(): string {
   return `${STORAGE_PREFIX}_${AREAS_KEY}`
+}
+
+/**
+ * Returns the storage key for the last opened area.
+ * @returns Fully-qualified key for the last area name.
+ */
+export function lastAreaKey(): string {
+  return `${STORAGE_PREFIX}_${LAST_AREA_KEY}`
+}
+
+/**
+ * Returns the storage key for the last selected circuit within an area.
+ * @param areaName - The area name.
+ * @returns Fully-qualified key for that area's last circuit index.
+ */
+export function lastCircuitKey(areaName: string): string {
+  return `${STORAGE_PREFIX}_${areaName}_${LAST_CIRCUIT_KEY}`
 }

@@ -1,5 +1,3 @@
-require("LensStudio:TextInputModule")
-
 import {Logger} from "Utilities.lspkg/Scripts/Utils/Logger"
 import {AppScreen, AppLifecycleState, CaptureState} from "./AppState"
 import {EventBus} from "../Shared/EventBus"
@@ -17,6 +15,8 @@ import {MAX_AREAS, CAMERA_GAZE_OFFSET, CAPTURE_ANCHOR_FORWARD_DISTANCE, LOCALIZA
 import {Anchor} from "Spatial Anchors.lspkg/Anchor"
 import {AnchorComponent} from "Spatial Anchors.lspkg/AnchorComponent"
 
+const IN_AREA_FRAME_SIZE = new vec2(22.5, 14.8)
+const IN_AREA_CREATE_FRAME_SIZE = new vec2(22.5, 14.8)
 
 @component
 export class AppController extends BaseScriptComponent {
@@ -153,7 +153,13 @@ export class AppController extends BaseScriptComponent {
       this.camera,
       this.widgetParent,
       this.logger,
-      (text: string) => this.screenFactory?.setLocalizationStatus(text)
+      (text: string) => {
+        if (this.areaReady) {
+          this.screenFactory?.setRouteSummary(text)
+        } else {
+          this.screenFactory?.setLocalizationStatus(text)
+        }
+      }
     )
 
     // Single UIController: reuse the scene's "UIController" object if present, or a
@@ -223,6 +229,10 @@ export class AppController extends BaseScriptComponent {
         return
       }
       this.navigateTo(screen)
+    })
+
+    this.eventBus.on("startCircuit", () => {
+      this.startCircuitFromHome()
     })
 
     // CaptureScreen "Start Capturing" button
@@ -595,11 +605,15 @@ export class AppController extends BaseScriptComponent {
     if (this.currentScreen === AppScreen.InArea && this.uiController) {
       const frame = this.uiController.getFrame()
       frame.innerSize = this.createCircuitMode
-        ? new vec2(16.8, 13.8)
-        : new vec2(21.5, 12.5)
+        ? IN_AREA_CREATE_FRAME_SIZE
+        : IN_AREA_FRAME_SIZE
     }
 
     this.screenFactory.setCircuitName(this.circuitController.getActiveCircuitName())
+    this.screenFactory.setCircuitStepCounts(this.circuitController.getCircuitStepCounts())
+    this.screenFactory.setCircuitFollowAvailable(
+      this.circuitController.getActiveCircuitStepCount() > 0
+    )
     this.screenFactory.setCircuitFollowActive(this.circuitController.isFollowing())
     this.screenFactory.setCreateMode(
       this.createCircuitMode,
@@ -633,6 +647,13 @@ export class AppController extends BaseScriptComponent {
 
     this.widgetsRestored = true
     this.widgetController.restoreWidgets(this.currentAreaName, this.storageController)
+    this.circuitController?.selectBestAvailableCircuit(
+      this.storageController.getLastCircuitIndex(this.currentAreaName)
+    )
+    this.storageController.saveLastCircuitIndex(
+      this.currentAreaName,
+      this.circuitController?.getActiveCircuitIndex() ?? 0
+    )
     this.circuitController?.applyActiveCircuitVisibility()
     this.refreshCircuitUi()
     this.logger.info("Widgets restored after area localization")
@@ -641,16 +662,14 @@ export class AppController extends BaseScriptComponent {
   // ── Action Handlers ──────────────────────────────────
 
   /** Generate area name/ID early so session can open on Capture screen entry. */
-  private prepareNewArea(displayName?: string): boolean {
+  private prepareNewArea(): boolean {
     const areaCount = this.storageController.getAreaCount()
     if (areaCount >= MAX_AREAS) {
       this.logger.warn("Maximum number of areas reached")
       this.screenFactory?.setLocalizationStatus("Maximum saved areas reached.\nDelete an old area before adding another.")
       return false
     }
-    this.currentAreaName = this.makeUniqueAreaName(
-      this.normalizeAreaName(displayName) || `Circuit ${areaCount + 1}`
-    )
+    this.currentAreaName = this.getNextCircuitAreaName()
     this.currentAreaId = "area_" + Date.now().toString(36) + "_" + Math.random().toString(36).substring(2, 10)
     this.logger.info(`Prepared new area: "${this.currentAreaName}" → "${this.currentAreaId}"`)
     return true
@@ -663,13 +682,21 @@ export class AppController extends BaseScriptComponent {
       return
     }
 
-    const fallback = `Circuit ${areaCount + 1}`
-    this.screenFactory?.setLocalizationStatus("Name this area.\nLeave it blank to use the next Circuit name.")
-    this.promptForAreaName(fallback, (name) => {
-      if (!this.prepareNewArea(name)) return
-      this.isNewArea = true
-      this.navigateTo(AppScreen.InArea, this.currentAreaName)
-    })
+    if (!this.prepareNewArea()) return
+    this.isNewArea = true
+    this.navigateTo(AppScreen.InArea, this.currentAreaName)
+  }
+
+  private startCircuitFromHome(): void {
+    const resume = this.getResumeArea()
+    if (resume) {
+      this.currentAreaId = resume.id
+      this.isNewArea = false
+      this.navigateTo(AppScreen.InArea, resume.name)
+      return
+    }
+
+    this.startNamedAreaCreation()
   }
 
   private startCapture(): void {
@@ -725,6 +752,7 @@ export class AppController extends BaseScriptComponent {
     if (areaId) {
       this.currentAreaId = areaId
       this.isNewArea = false
+      this.storageController.saveLastAreaName(info.name)
       this.navigateTo(AppScreen.InArea, info.name)
     } else {
       this.logger.warn(`Area "${info.name}" occupied but no areaId found in storage`)
@@ -766,6 +794,11 @@ export class AppController extends BaseScriptComponent {
       if (!(this.currentAreaName in serializedAreas)) {
         this.storageController.saveArea(this.currentAreaName, this.currentAreaId)
       }
+      this.storageController.saveLastAreaName(this.currentAreaName)
+      this.storageController.saveLastCircuitIndex(
+        this.currentAreaName,
+        this.circuitController?.getActiveCircuitIndex() ?? 0
+      )
 
       if (global.deviceInfoSystem.isEditor()) {
         this.setAreaReady(true, "Area ready (editor)")
@@ -782,6 +815,9 @@ export class AppController extends BaseScriptComponent {
   private enterExistingArea(): void {
     this.logger.info(`Entering EXISTING area: "${this.currentAreaName}" (${this.currentAreaId})`)
     this.setAreaReady(false, "Look and move around to help recognize the area.")
+    if (this.currentAreaName) {
+      this.storageController.saveLastAreaName(this.currentAreaName)
+    }
     this.subscribeToAnchorEvents()
 
     this.anchorController.selectArea(this.currentAreaId, () => {
@@ -887,16 +923,16 @@ export class AppController extends BaseScriptComponent {
     this.refreshCircuitUi()
   }
 
-  private addCircuitStep(): void {
+  private addCircuitStep(): boolean {
     if (!this.currentAreaName) {
       this.logger.error("Cannot add circuit step — no active area")
-      return
+      return false
     }
 
     if (!this.ensureAreaReady(
-      "Still scanning this area.\nCreate Circuit unlocks once the route anchor is ready."
+      "Still scanning this area.\nCreate unlocks once the route anchor is ready."
     )) {
-      return
+      return false
     }
 
     if (!this.anchorController.anchor && !global.deviceInfoSystem.isEditor()) {
@@ -905,13 +941,18 @@ export class AppController extends BaseScriptComponent {
         false,
         "Area is not ready yet — keep looking and moving around.\nSteps unlock once the anchor is saved."
       )
-      return
+      return false
     }
 
     const added = this.circuitController.addStep(this.currentAreaName)
     if (added) {
+      this.storageController.saveLastCircuitIndex(
+        this.currentAreaName,
+        this.circuitController.getActiveCircuitIndex()
+      )
       this.refreshCircuitUi()
     }
+    return added
   }
 
   private startCreateCircuitMode(): void {
@@ -926,9 +967,16 @@ export class AppController extends BaseScriptComponent {
       return
     }
 
+    const added = this.addCircuitStep()
+    if (!added) {
+      this.createCircuitMode = false
+      this.circuitController.setCreateModeActive(false)
+      this.refreshCircuitUi()
+      return
+    }
+
     this.createCircuitMode = true
     this.circuitController.setCreateModeActive(true)
-    this.addCircuitStep()
     this.refreshCircuitUi()
   }
 
@@ -984,6 +1032,12 @@ export class AppController extends BaseScriptComponent {
     this.createCircuitMode = false
     this.circuitController.setCreateModeActive(false)
     this.circuitController.nextCircuit()
+    if (this.currentAreaName) {
+      this.storageController.saveLastCircuitIndex(
+        this.currentAreaName,
+        this.circuitController.getActiveCircuitIndex()
+      )
+    }
     this.refreshCircuitUi()
   }
 
@@ -995,13 +1049,19 @@ export class AppController extends BaseScriptComponent {
     }
     this.createCircuitMode = false
     this.circuitController.setCreateModeActive(false)
-    this.circuitController.selectCircuitWithIntent(index)
+    this.circuitController.selectCircuit(index)
+    if (this.currentAreaName) {
+      this.storageController.saveLastCircuitIndex(
+        this.currentAreaName,
+        this.circuitController.getActiveCircuitIndex()
+      )
+    }
     this.refreshCircuitUi()
   }
 
   private toggleCircuitFollow(): void {
     if (!this.ensureAreaReady(
-      "Still scanning this area.\nFollow Path unlocks when the route anchor is ready."
+      "Still scanning this area.\nFollow unlocks when the route anchor is ready."
     )) {
       return
     }
@@ -1135,64 +1195,33 @@ export class AppController extends BaseScriptComponent {
     this.screenFactory?.refreshMyAreas(areaInfos)
   }
 
-  private promptForAreaName(
-    fallbackName: string,
-    onComplete: (name: string) => void
-  ): void {
-    if (!global.textInputSystem) {
-      onComplete(fallbackName)
-      return
-    }
-
-    try {
-      const options = new TextInputSystem.KeyboardOptions()
-      let latest = ""
-      let completed = false
-      const complete = (text: string): void => {
-        if (completed) return
-        completed = true
-        const finalName = this.normalizeAreaName(text) || latest || fallbackName
-        global.textInputSystem.dismissKeyboard()
-        onComplete(finalName)
-      }
-
-      options.initialText = ""
-      options.enablePreview = false
-      options.keyboardType = TextInputSystem.KeyboardType.Text
-      options.returnKeyType = TextInputSystem.ReturnKeyType.Done
-      options.onTextChanged = (text: string, _range: vec2) => {
-        latest = this.normalizeAreaName(text) || fallbackName
-      }
-      options.onReturnKeyPressed = () => {
-        complete(latest)
-      }
-      options.onKeyboardStateChanged = (isOpen: boolean) => {
-        if (!isOpen) {
-          complete(latest)
-        }
-      }
-
-      global.textInputSystem.requestKeyboard(options)
-    } catch (e) {
-      this.logger.warn(`Area naming keyboard unavailable: ${e}`)
-      onComplete(fallbackName)
-    }
-  }
-
-  private normalizeAreaName(name?: string): string {
-    if (!name) return ""
-    return name.replace(/\s+/g, " ").trim().substring(0, 24)
-  }
-
-  private makeUniqueAreaName(baseName: string): string {
+  private getResumeArea(): {name: string; id: string} | null {
     const areas = this.storageController.getAreas()
-    if (!(baseName in areas)) return baseName
+    const lastAreaName = this.storageController.getLastAreaName()
+    if (lastAreaName && areas[lastAreaName]) {
+      return {
+        name: lastAreaName,
+        id: areas[lastAreaName],
+      }
+    }
 
-    let index = 2
-    let candidate = `${baseName} ${index}`
+    const areaNames = Object.keys(areas)
+    if (areaNames.length === 0) return null
+
+    const fallbackName = areaNames[areaNames.length - 1]
+    return {
+      name: fallbackName,
+      id: areas[fallbackName],
+    }
+  }
+
+  private getNextCircuitAreaName(): string {
+    const areas = this.storageController.getAreas()
+    let index = 1
+    let candidate = `Circuit ${index}`
     while (candidate in areas) {
       index++
-      candidate = `${baseName} ${index}`
+      candidate = `Circuit ${index}`
     }
     return candidate
   }

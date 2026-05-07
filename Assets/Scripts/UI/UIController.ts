@@ -15,7 +15,7 @@ const SCREEN_SIZES: Record<AppScreen, vec2> = {
   [AppScreen.Capture]: new vec2(33, 20),
   [AppScreen.InCapture]: new vec2(33, 20),
   [AppScreen.MyAreas]: new vec2(33, 25),
-  [AppScreen.InArea]: new vec2(21.5, 12.5),
+  [AppScreen.InArea]: new vec2(22.5, 14.8),
 }
 
 const TRANSITION_DURATION = 0.4

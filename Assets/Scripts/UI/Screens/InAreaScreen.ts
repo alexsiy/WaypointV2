@@ -17,6 +17,7 @@ interface ButtonConfig {
   payload?: unknown
   requiresAreaReady?: boolean
   requiresFollowActive?: boolean
+  requiresFollowAvailable?: boolean
   disabledWhenFollowing?: boolean
 }
 
@@ -32,6 +33,7 @@ interface ManagedButtonRef {
   text: Text
   requiresAreaReady: boolean
   requiresFollowActive: boolean
+  requiresFollowAvailable: boolean
   disabledWhenFollowing: boolean
 }
 
@@ -68,6 +70,8 @@ export class InAreaScreen {
   private followModeRoots: SceneObject[] = []
   private selectedCircuitName: string = DEFAULT_CIRCUITS[0].name
   private selectedCircuitIndex: number = 0
+  private circuitStepCounts: number[] = DEFAULT_CIRCUITS.map(() => 0)
+  private followAvailable: boolean = false
   private createCircuitHighlighted: boolean = false
   private followHeadingComp: Text | null = null
   private boldFont: Font | null = null
@@ -84,7 +88,7 @@ export class InAreaScreen {
     this.buildRouteSummary()
     this.buildFollowHeading()
     this.buildLayerRow()
-    this.buildCreateCircuitButton()
+    this.buildActionRow()
     this.buildCreateModePanel()
     this.buildExitButton()
     this.buildScanAnimationTicker()
@@ -130,6 +134,20 @@ export class InAreaScreen {
     this.selectedCircuitName = name
     const idx = DEFAULT_CIRCUITS.findIndex((c) => c.name === name)
     this.selectedCircuitIndex = idx >= 0 ? idx : 0
+    this.refreshFollowHeading()
+    this.applyButtonAvailability()
+    this.refreshLayerButtons()
+  }
+
+  setCircuitStepCounts(counts: number[]): void {
+    this.circuitStepCounts = DEFAULT_CIRCUITS.map((_circuit, index) =>
+      Math.max(0, counts[index] ?? 0)
+    )
+    this.refreshLayerButtons()
+  }
+
+  setFollowAvailable(available: boolean): void {
+    this.followAvailable = available
     this.applyButtonAvailability()
     this.refreshLayerButtons()
   }
@@ -137,26 +155,40 @@ export class InAreaScreen {
   private refreshLayerButtons(): void {
     for (const layer of this.layerButtons) {
       const active = layer.index === this.selectedCircuitIndex
+      const stepCount = this.circuitStepCounts[layer.index] ?? 0
+      const hasSteps = stepCount > 0
       ;(layer.btn as any)._style = "PrimaryNeutral"
       layer.text.text = `${layer.index + 1}`
-      layer.text.size = active ? 44 : 40
-      layer.text.textFill.color = this.areaReady && !this.followActive
-        ? active
-          ? new vec4(1, 1, 1, 1)
-          : new vec4(1, 1, 1, 0.9)
-        : new vec4(0.62, 0.66, 0.7, 0.72)
+      layer.text.size = active
+        ? hasSteps
+          ? 44
+          : 40
+        : hasSteps
+          ? 40
+          : 34
+      layer.text.textFill.color =
+        this.areaReady && !this.followActive
+          ? active
+            ? hasSteps
+              ? new vec4(1, 1, 1, 1)
+              : new vec4(1, 0.9, 0.35, 0.78)
+            : hasSteps
+              ? new vec4(1, 1, 1, 0.88)
+              : new vec4(0.62, 0.66, 0.7, 0.48)
+          : new vec4(0.62, 0.66, 0.7, 0.72)
     }
     if (this.createCircuitTextComp) {
-      this.createCircuitTextComp.text = `Create Circuit (${this.selectedCircuitIndex + 1})`
+      this.createCircuitTextComp.text = "Create"
     }
   }
 
   setFollowActive(active: boolean): void {
     this.followActive = active
+    this.refreshFollowHeading()
     this.applyButtonAvailability()
     this.refreshLayerButtons()
     if (this.followTextComp) {
-      this.followTextComp.text = active ? "Stop Path" : "Follow Path"
+      this.followTextComp.text = active ? "Stop" : "Follow"
       this.followTextComp.textFill.color = !this.areaReady
         ? new vec4(0.62, 0.66, 0.7, 0.72)
         : active
@@ -188,6 +220,8 @@ export class InAreaScreen {
   setAreaReady(ready: boolean): void {
     this.areaReady = ready
     this.lastScanFrame = -1
+    this.refreshFollowHeading()
+    this.applyModeVisibility()
     this.applyButtonAvailability()
     this.refreshLayerButtons()
     this.updateLocalizationVisual(true)
@@ -207,21 +241,11 @@ export class InAreaScreen {
   setCreateMode(active: boolean, circuitIndex: number): void {
     this.createModeActive = active
     this.selectedCircuitIndex = Math.max(0, circuitIndex)
-    if (this.localizationStatusComp) {
-      this.localizationStatusComp.getSceneObject().enabled = !active
-    }
-    if (this.routeSummaryComp) {
-      this.routeSummaryComp.getSceneObject().enabled = !active
-    }
-    for (let i = 0; i < this.followModeRoots.length; i++) {
-      this.followModeRoots[i].enabled = !active
-    }
-    for (let i = 0; i < this.createModeRoots.length; i++) {
-      this.createModeRoots[i].enabled = active
-    }
     if (this.createModeHeaderComp) {
-      this.createModeHeaderComp.text = `CREATING CIRCUIT ${this.selectedCircuitIndex + 1}`
+      this.createModeHeaderComp.text = `CREATING STORY ${this.selectedCircuitIndex + 1}`
     }
+    this.applyModeVisibility()
+    this.refreshFollowHeading()
     this.refreshLayerButtons()
     this.applyButtonAvailability()
   }
@@ -234,7 +258,7 @@ export class InAreaScreen {
     this.localizationStatusComp = textObj.createComponent("Component.Text") as Text
     this.localizationStatusComp.text = this.localizationBaseText
     this.localizationStatusComp.size = 31
-    this.localizationStatusComp.worldSpaceRect = Rect.create(-16.5, 16.5, -1.45, 1.45)
+    this.localizationStatusComp.worldSpaceRect = Rect.create(-10.5, 10.5, -1.65, 1.65)
     this.localizationStatusComp.horizontalOverflow = HorizontalOverflow.Wrap
     this.localizationStatusComp.verticalOverflow = VerticalOverflow.Shrink
     this.localizationStatusComp.horizontalAlignment = HorizontalAlignment.Center
@@ -242,16 +266,16 @@ export class InAreaScreen {
     this.localizationStatusComp.textFill.mode = TextFillMode.Solid
     this.localizationStatusComp.textFill.color = new vec4(1, 0.85, 0.4, 1)
     this.localizationStatusComp.renderOrder = 10
-    textObj.getTransform().setLocalPosition(new vec3(0, 10.1, 2))
+    textObj.getTransform().setLocalPosition(new vec3(0, 3.05, 2))
   }
 
   private buildRouteSummary(): void {
     const textObj = global.scene.createSceneObject("CircuitRouteSummary")
     textObj.setParent(this.container)
     this.routeSummaryComp = textObj.createComponent("Component.Text") as Text
-    this.routeSummaryComp.text = "Authoring · Step 0/0\nNo steps yet. Tap Create Circuit (1) to add Step 1."
-    this.routeSummaryComp.size = 23
-    this.routeSummaryComp.worldSpaceRect = Rect.create(-21.5, 21.5, -2.5, 2.5)
+    this.routeSummaryComp.text = "Authoring · Step 0/0\nNo steps yet. Tap Create to add Step 1."
+    this.routeSummaryComp.size = 26
+    this.routeSummaryComp.worldSpaceRect = Rect.create(-10.6, 10.6, -1.25, 1.25)
     this.routeSummaryComp.horizontalOverflow = HorizontalOverflow.Wrap
     this.routeSummaryComp.verticalOverflow = VerticalOverflow.Shrink
     this.routeSummaryComp.horizontalAlignment = HorizontalAlignment.Center
@@ -259,7 +283,7 @@ export class InAreaScreen {
     this.routeSummaryComp.textFill.mode = TextFillMode.Solid
     this.routeSummaryComp.textFill.color = new vec4(1, 1, 1, 0.95)
     this.routeSummaryComp.renderOrder = 10
-    textObj.getTransform().setLocalPosition(new vec3(0, 7.0, 2))
+    textObj.getTransform().setLocalPosition(new vec3(0, 3.35, 2))
   }
 
   private buildFollowHeading(): void {
@@ -267,9 +291,9 @@ export class InAreaScreen {
     textObj.setParent(this.container)
     this.followModeRoots.push(textObj)
     this.followHeadingComp = textObj.createComponent("Component.Text") as Text
-    this.followHeadingComp.text = "FOLLOW CIRCUIT"
-    this.followHeadingComp.size = 54
-    this.followHeadingComp.worldSpaceRect = Rect.create(-14.5, 14.5, -1.2, 1.2)
+    this.followHeadingComp.text = "MAPPING AREA"
+    this.followHeadingComp.size = 46
+    this.followHeadingComp.worldSpaceRect = Rect.create(-10.8, 10.8, -1.05, 1.05)
     this.followHeadingComp.horizontalOverflow = HorizontalOverflow.Wrap
     this.followHeadingComp.verticalOverflow = VerticalOverflow.Overflow
     this.followHeadingComp.horizontalAlignment = HorizontalAlignment.Center
@@ -281,7 +305,7 @@ export class InAreaScreen {
     if (bold) {
       this.followHeadingComp.font = bold
     }
-    textObj.getTransform().setLocalPosition(new vec3(0, 4.9, 2))
+    textObj.getTransform().setLocalPosition(new vec3(0, 5.55, 2))
   }
 
   private buildLayerRow(): void {
@@ -292,29 +316,45 @@ export class InAreaScreen {
       fontSize: 40,
       payload: {index},
       requiresAreaReady: true,
-      disabledWhenFollowing: false,
+      disabledWhenFollowing: true,
     }))
 
-    this.buildGridRow("LayerGrid", layerButtons, new vec3(0, -0.6, 2), new vec2(8.6, 10.2), 3)
+    this.buildGridRow("LayerGrid", layerButtons, new vec3(0, -1.0, 2), new vec2(7.05, 7.25), 3)
   }
 
-  private buildCreateCircuitButton(): void {
-    const createButton: ButtonConfig[] = [
+  private buildActionRow(): void {
+    const actionButtons: ButtonConfig[] = [
       {
-        label: "Create Circuit (1)",
+        label: "Create",
         event: "startCreateCircuit",
         style: "PrimaryNeutral",
-        fontSize: 32,
+        fontSize: 25,
         requiresAreaReady: true,
         disabledWhenFollowing: true,
       },
+      {
+        label: "Follow",
+        event: "toggleCircuitFollow",
+        style: "PrimaryNeutral",
+        fontSize: 25,
+        requiresAreaReady: true,
+        requiresFollowAvailable: true,
+      },
+      {
+        label: "Next",
+        event: "advanceCircuitStep",
+        style: "PrimaryNeutral",
+        fontSize: 25,
+        requiresAreaReady: true,
+        requiresFollowActive: true,
+      },
     ]
     this.buildGridRow(
-      "CreateCircuitGrid",
-      createButton,
-      new vec3(0, -6.3, 2),
-      new vec2(14.6, 4.9),
-      1
+      "CircuitActionGrid",
+      actionButtons,
+      new vec3(0, -5.75, 2),
+      new vec2(7.1, 3.7),
+      3
     )
   }
 
@@ -323,8 +363,8 @@ export class InAreaScreen {
     headerObj.setParent(this.container)
     this.createModeRoots.push(headerObj)
     this.createModeHeaderComp = headerObj.createComponent("Component.Text") as Text
-    this.createModeHeaderComp.text = "CREATING CIRCUIT 1"
-    this.createModeHeaderComp.size = 52
+    this.createModeHeaderComp.text = "CREATING STORY 1"
+    this.createModeHeaderComp.size = 46
     this.createModeHeaderComp.worldSpaceRect = Rect.create(-16.5, 16.5, -1.3, 1.3)
     this.createModeHeaderComp.horizontalOverflow = HorizontalOverflow.Wrap
     this.createModeHeaderComp.verticalOverflow = VerticalOverflow.Overflow
@@ -337,7 +377,7 @@ export class InAreaScreen {
     if (bold) {
       this.createModeHeaderComp.font = bold
     }
-    headerObj.getTransform().setLocalPosition(new vec3(0, 4.8, 2))
+    headerObj.getTransform().setLocalPosition(new vec3(0, 5.0, 2))
 
     this.buildGridRow(
       "CreateModeAddNote",
@@ -351,8 +391,8 @@ export class InAreaScreen {
           disabledWhenFollowing: true,
         },
       ],
-      new vec3(0, 0.6, 2),
-      new vec2(13.6, 3.8),
+      new vec3(0, 1.0, 2),
+      new vec2(13.2, 3.5),
       1
     )
     this.buildGridRow(
@@ -367,8 +407,8 @@ export class InAreaScreen {
           disabledWhenFollowing: true,
         },
       ],
-      new vec3(0, -3.0, 2),
-      new vec2(13.6, 3.8),
+      new vec3(0, -2.45, 2),
+      new vec2(13.2, 3.5),
       1
     )
     this.buildGridRow(
@@ -383,8 +423,8 @@ export class InAreaScreen {
           disabledWhenFollowing: true,
         },
       ],
-      new vec3(0, -6.6, 2),
-      new vec2(13.6, 3.8),
+      new vec3(0, -5.9, 2),
+      new vec2(13.2, 3.5),
       1
     )
   }
@@ -392,7 +432,7 @@ export class InAreaScreen {
   private buildExitButton(): void {
     const exitObj = global.scene.createSceneObject("ExitAreaButton")
     exitObj.setParent(this.container)
-    exitObj.getTransform().setLocalPosition(new vec3(10.5, 6.7, 2))
+    exitObj.getTransform().setLocalPosition(new vec3(10.1, 6.1, 2))
 
     const btn = exitObj.createComponent(RectangleButton.getTypeName()) as RectangleButton
     ;(btn as any)._style = "Primary"
@@ -415,6 +455,7 @@ export class InAreaScreen {
       text: textComp,
       requiresAreaReady: false,
       requiresFollowActive: false,
+      requiresFollowAvailable: false,
       disabledWhenFollowing: false,
     })
   }
@@ -428,7 +469,7 @@ export class InAreaScreen {
   ): void {
     const gridObj = global.scene.createSceneObject(name)
     gridObj.setParent(this.container)
-    if (name === "LayerGrid" || name === "CreateCircuitGrid") {
+    if (name === "LayerGrid" || name === "CircuitActionGrid") {
       this.followModeRoots.push(gridObj)
     } else if (name.indexOf("CreateMode") === 0) {
       this.createModeRoots.push(gridObj)
@@ -444,8 +485,8 @@ export class InAreaScreen {
       const btn = btnObj.createComponent(RectangleButton.getTypeName()) as RectangleButton
       ;(btn as any)._style = config.style ?? "PrimaryNeutral"
       const isCircuitRow = name === "LayerGrid"
-      const btnW = isCircuitRow ? 6.6 : cellSize.x - 1
-      const btnH = isCircuitRow ? 6.6 : cellSize.y - 1
+      const btnW = isCircuitRow ? 5.8 : cellSize.x - 1
+      const btnH = isCircuitRow ? 5.8 : cellSize.y - 1
       btn.size = new vec3(btnW, btnH, 1)
       btn.renderOrder = 10
       btn.initialize()
@@ -486,12 +527,12 @@ export class InAreaScreen {
         this.createCircuitButton = btn
       }
 
-      if (config.label === "Follow Path") {
+      if (config.event === "toggleCircuitFollow") {
         this.followTextComp = textComp
         this.followButton = btn
       }
 
-      if (config.label === "Next Step") {
+      if (config.event === "advanceCircuitStep") {
         this.nextStepTextComp = textComp
         this.nextStepButton = btn
       }
@@ -524,6 +565,7 @@ export class InAreaScreen {
         text: textComp,
         requiresAreaReady: config.requiresAreaReady === true,
         requiresFollowActive: config.requiresFollowActive === true,
+        requiresFollowAvailable: config.requiresFollowAvailable === true,
         disabledWhenFollowing: config.disabledWhenFollowing === true,
       })
     }
@@ -597,6 +639,41 @@ export class InAreaScreen {
     })
   }
 
+  private applyModeVisibility(): void {
+    const showCreate = this.createModeActive
+    const showFollow = !showCreate
+
+    if (this.localizationStatusComp) {
+      this.localizationStatusComp.getSceneObject().enabled =
+        showFollow && !this.areaReady
+    }
+    if (this.routeSummaryComp) {
+      this.routeSummaryComp.getSceneObject().enabled = this.areaReady
+    }
+    for (let i = 0; i < this.followModeRoots.length; i++) {
+      this.followModeRoots[i].enabled = showFollow
+    }
+    for (let i = 0; i < this.createModeRoots.length; i++) {
+      this.createModeRoots[i].enabled = showCreate
+    }
+  }
+
+  private refreshFollowHeading(): void {
+    if (!this.followHeadingComp) return
+
+    if (!this.areaReady) {
+      this.followHeadingComp.text = "MAPPING AREA"
+      return
+    }
+
+    if (this.followActive) {
+      this.followHeadingComp.text = `FOLLOW ${this.selectedCircuitName.toUpperCase()}`
+      return
+    }
+
+    this.followHeadingComp.text = "SELECT A STORY"
+  }
+
   private updateLocalizationVisual(force: boolean): void {
     if (!this.localizationStatusComp) return
 
@@ -613,8 +690,8 @@ export class InAreaScreen {
     this.lastScanFrame = frame
 
     this.localizationStatusComp.text =
-      `${this.localizationBaseText}\n${frames[frame]} scanning`
-    this.localizationStatusComp.size = 25
+      `${this.localizationBaseText}\n${frames[frame]} mapping`
+    this.localizationStatusComp.size = 24
     this.localizationStatusComp.textFill.color = new vec4(1, 0.84, 0.38, 1)
   }
 
@@ -705,13 +782,18 @@ export class InAreaScreen {
       const locked =
         (button.requiresAreaReady && !this.areaReady) ||
         (button.requiresFollowActive && !this.followActive) ||
+        (button.requiresFollowAvailable && !this.followAvailable) ||
         (button.disabledWhenFollowing && this.followActive)
       button.btn.inactive = locked
       if (locked) {
         button.text.textFill.color = disabledColor
-      } else if (button.label === "Next Step" && this.followActive) {
+      } else if (button.requiresFollowActive && this.followActive) {
         button.text.textFill.color = new vec4(1, 0.92, 0.45, 1)
-      } else if (button.label !== "Follow Path") {
+      } else if (button.label === "Follow") {
+        button.text.textFill.color = this.followActive
+          ? new vec4(1, 0.92, 0.45, 1)
+          : enabledColor
+      } else {
         button.text.textFill.color = enabledColor
       }
     }
