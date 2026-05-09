@@ -570,6 +570,18 @@ export class WidgetController {
     }
   }
 
+  removeWidgetByIndex(
+    index: number,
+    storageCtrl: StorageController,
+    areaName: string
+  ): boolean {
+    const widget = this.widgets.find((w) => w.widgetIndex === index)
+    if (!widget) return false
+
+    this.removeWidget(index, storageCtrl, areaName)
+    return true
+  }
+
   /**
    * Get the SceneObject that InteractableManipulation actually moves (Frame's SceneObject).
    * All transform read/write operations MUST use this, not the wrapper.

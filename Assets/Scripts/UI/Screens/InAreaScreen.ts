@@ -242,7 +242,7 @@ export class InAreaScreen {
     this.createModeActive = active
     this.selectedCircuitIndex = Math.max(0, circuitIndex)
     if (this.createModeHeaderComp) {
-      this.createModeHeaderComp.text = `CREATING STORY ${this.selectedCircuitIndex + 1}`
+      this.createModeHeaderComp.text = `STORY ${this.selectedCircuitIndex + 1} BUILDER`
     }
     this.applyModeVisibility()
     this.refreshFollowHeading()
@@ -333,6 +333,15 @@ export class InAreaScreen {
         disabledWhenFollowing: true,
       },
       {
+        label: "Edit",
+        event: "editCircuitSteps",
+        style: "PrimaryNeutral",
+        fontSize: 25,
+        requiresAreaReady: true,
+        requiresFollowAvailable: true,
+        disabledWhenFollowing: true,
+      },
+      {
         label: "Follow",
         event: "toggleCircuitFollow",
         style: "PrimaryNeutral",
@@ -353,8 +362,8 @@ export class InAreaScreen {
       "CircuitActionGrid",
       actionButtons,
       new vec3(0, -5.75, 2),
-      new vec2(7.1, 3.7),
-      3
+      new vec2(5.35, 3.55),
+      4
     )
   }
 
@@ -380,52 +389,68 @@ export class InAreaScreen {
     headerObj.getTransform().setLocalPosition(new vec3(0, 5.0, 2))
 
     this.buildGridRow(
-      "CreateModeAddNote",
+      "CreateModeStepTools",
       [
         {
-          label: "Add Note Above",
+          label: "Prev",
+          event: "previousCreateStep",
+          style: "PrimaryNeutral",
+          fontSize: 22,
+          requiresAreaReady: true,
+          disabledWhenFollowing: true,
+        },
+        {
+          label: "Step Note",
           event: "addNoteToCurrentStep",
           style: "PrimaryNeutral",
-          fontSize: 32,
+          fontSize: 20,
+          requiresAreaReady: true,
+          disabledWhenFollowing: true,
+        },
+        {
+          label: "Frame",
+          event: "toggleStepObjectFrame",
+          style: "PrimaryNeutral",
+          fontSize: 22,
+          requiresAreaReady: true,
+          disabledWhenFollowing: true,
+        },
+        {
+          label: "Remove",
+          event: "removeCurrentStep",
+          style: "PrimaryNeutral",
+          fontSize: 21,
           requiresAreaReady: true,
           disabledWhenFollowing: true,
         },
       ],
-      new vec3(0, 1.0, 2),
-      new vec2(13.2, 3.5),
-      1
+      new vec3(0, 0.7, 2),
+      new vec2(5.35, 3.25),
+      4
     )
     this.buildGridRow(
-      "CreateModeNext",
+      "CreateModeNextFinish",
       [
         {
           label: "Next Step",
           event: "nextCreateStep",
           style: "PrimaryNeutral",
-          fontSize: 34,
+          fontSize: 31,
           requiresAreaReady: true,
           disabledWhenFollowing: true,
         },
-      ],
-      new vec3(0, -2.45, 2),
-      new vec2(13.2, 3.5),
-      1
-    )
-    this.buildGridRow(
-      "CreateModeFinish",
-      [
         {
           label: "Finish",
           event: "finishCreateCircuit",
           style: "Primary",
-          fontSize: 34,
+          fontSize: 31,
           requiresAreaReady: true,
           disabledWhenFollowing: true,
         },
       ],
-      new vec3(0, -5.9, 2),
-      new vec2(13.2, 3.5),
-      1
+      new vec3(0, -3.55, 2),
+      new vec2(8.2, 3.5),
+      2
     )
   }
 

@@ -128,6 +128,13 @@ export class CircuitController {
       this.enteredStepAt = -1
       this.lastStatusAt = 0
       this.clearGuide()
+      if (this.currentCreateStepWidgetIndex < 0) {
+        const steps = this.getStepsForCircuit(this.getActiveCircuit().id)
+        const latest = steps.length > 0 ? steps[steps.length - 1] : null
+        if (latest) {
+          this.currentCreateStepWidgetIndex = latest.widget.widgetIndex
+        }
+      }
     }
     this.applyActiveCircuitVisibility()
   }
@@ -137,7 +144,13 @@ export class CircuitController {
     const total = activeSteps.length
 
     if (this.createModeActive) {
-      return `Creating · ${this.getActiveCircuitName()}\nMove/resize the box, then tap Next Step or Finish.`
+      if (total === 0) {
+        return `Editing · Step 0/0\nNo steps yet. Tap Create to add Step 1.`
+      }
+
+      const selectedIndex = this.getSelectedCreateStepOrdinal(activeSteps)
+      const current = selectedIndex >= 0 ? selectedIndex + 1 : total
+      return `Editing · Step ${current}/${total}\nMove the frame, edit the note, remove this step, or continue.`
     }
 
     if (total === 0) {
@@ -313,6 +326,119 @@ export class CircuitController {
     return true
   }
 
+  startEditingActiveCircuit(): boolean {
+    const steps = this.getStepsForCircuit(this.getActiveCircuit().id)
+    if (steps.length === 0) {
+      this.statusCallback(
+        `${this.getActiveCircuitName()} has no steps yet.\nTap Create to add Step 1.`
+      )
+      return false
+    }
+
+    this.followActive = false
+    this.createModeActive = true
+    this.nextStepIndex = 0
+    this.enteredStepAt = -1
+    this.lastStatusAt = 0
+    this.clearGuide()
+    this.selectCreateStep(steps[0], true)
+    this.applyActiveCircuitVisibility()
+    this.statusCallback(
+      `Editing ${this.getActiveCircuitName()} step 1/${steps.length}.\nUse Prev/Next Step to move through the story.`
+    )
+    return true
+  }
+
+  selectPreviousCreateStep(): boolean {
+    const steps = this.getStepsForCircuit(this.getActiveCircuit().id)
+    if (steps.length === 0) {
+      this.statusCallback(
+        `${this.getActiveCircuitName()} has no steps yet.\nTap Create to add Step 1.`
+      )
+      return false
+    }
+
+    const currentIndex = this.getSelectedCreateStepOrdinal(steps)
+    const nextIndex =
+      currentIndex <= 0 ? steps.length - 1 : currentIndex - 1
+    this.selectCreateStep(steps[nextIndex], true)
+    this.applyActiveCircuitVisibility()
+    this.statusCallback(
+      `Editing step ${nextIndex + 1}/${steps.length}.\nMove the frame or edit the note.`
+    )
+    return true
+  }
+
+  advanceCreateStepOrAdd(areaName: string): boolean {
+    if (!this.createModeActive) {
+      return this.addStep(areaName)
+    }
+
+    const steps = this.getStepsForCircuit(this.getActiveCircuit().id)
+    if (steps.length === 0) {
+      return this.addStep(areaName)
+    }
+
+    const currentIndex = this.getSelectedCreateStepOrdinal(steps)
+    if (currentIndex >= 0 && currentIndex < steps.length - 1) {
+      const nextIndex = currentIndex + 1
+      this.selectCreateStep(steps[nextIndex], true)
+      this.applyActiveCircuitVisibility()
+      this.statusCallback(
+        `Editing step ${nextIndex + 1}/${steps.length}.\nMove the frame or edit the note.`
+      )
+      return true
+    }
+
+    return this.addStep(areaName)
+  }
+
+  removeCurrentStep(areaName: string): boolean {
+    const steps = this.getStepsForCircuit(this.getActiveCircuit().id)
+    if (steps.length === 0) {
+      this.statusCallback(
+        `${this.getActiveCircuitName()} has no steps to remove.`
+      )
+      return false
+    }
+
+    const selectedStep = this.getSelectedCreateStep(steps) ?? steps[steps.length - 1]
+    const removedStepIndex = selectedStep.meta.stepIndex
+    const removedStepNumber = removedStepIndex + 1
+    if (!this.widgetController.removeWidgetByIndex(
+      selectedStep.widget.widgetIndex,
+      this.storageController,
+      areaName
+    )) {
+      this.statusCallback("Could not remove this step.")
+      return false
+    }
+
+    this.renumberCircuitSteps(areaName)
+    const remainingSteps = this.getStepsForCircuit(this.getActiveCircuit().id)
+    if (remainingSteps.length === 0) {
+      this.createModeActive = false
+      this.currentCreateStepWidgetIndex = -1
+      this.revealedCreateNoteWidgetIndex = -1
+      this.nextStepIndex = 0
+      this.enteredStepAt = -1
+      this.clearGuide()
+      this.applyActiveCircuitVisibility()
+      this.statusCallback(
+        `Removed step ${removedStepNumber}.\n${this.getActiveCircuitName()} has no steps left.`
+      )
+      return true
+    }
+
+    const nextIndex = Math.min(removedStepIndex, remainingSteps.length - 1)
+    this.selectCreateStep(remainingSteps[nextIndex], true)
+    this.applyActiveCircuitVisibility()
+    this.statusCallback(
+      `Removed step ${removedStepNumber}.\nNow editing step ${nextIndex + 1}/${remainingSteps.length}.`
+    )
+    return true
+  }
+
   toggleFollow(): boolean {
     if (this.followActive) {
       this.stopFollow()
@@ -399,7 +525,7 @@ export class CircuitController {
       return false
     }
 
-    const step = steps[steps.length - 1]
+    const step = this.getSelectedCreateStep(steps) ?? steps[steps.length - 1]
     const frameData = step.widget.getObjectFrameData()
     if (!frameData || frameData.enabled !== true) {
       this.statusCallback(
@@ -408,15 +534,11 @@ export class CircuitController {
       return false
     }
 
-    const target = this.widgetController.getTransformTargetForWidget(step.widget)
-    if (!target) {
+    if (!this.positionStepNoteAboveFrame(step)) {
       this.statusCallback("Could not open note: note panel transform is missing.")
       return false
     }
 
-    const yOffset = Math.max(6, frameData.size.y * 0.5 + 3.5)
-    const notePos = this.getStepFollowPosition(step).add(new vec3(0, yOffset, 0))
-    target.getTransform().setLocalPosition(notePos)
     this.currentCreateStepWidgetIndex = step.widget.widgetIndex
     this.revealedCreateNoteWidgetIndex = step.widget.widgetIndex
     this.applyActiveCircuitVisibility()
@@ -603,9 +725,57 @@ export class CircuitController {
     return steps
   }
 
+  private getSelectedCreateStep(
+    steps: CircuitStepRuntime[]
+  ): CircuitStepRuntime | null {
+    if (this.currentCreateStepWidgetIndex < 0) return null
+    return (
+      steps.find(
+        (step) => step.widget.widgetIndex === this.currentCreateStepWidgetIndex
+      ) ?? null
+    )
+  }
+
+  private getSelectedCreateStepOrdinal(steps: CircuitStepRuntime[]): number {
+    if (this.currentCreateStepWidgetIndex < 0) return -1
+    return steps.findIndex(
+      (step) => step.widget.widgetIndex === this.currentCreateStepWidgetIndex
+    )
+  }
+
+  private selectCreateStep(step: CircuitStepRuntime, revealNote: boolean): void {
+    this.currentCreateStepWidgetIndex = step.widget.widgetIndex
+    if (revealNote) {
+      this.revealedCreateNoteWidgetIndex = step.widget.widgetIndex
+      this.positionStepNoteAboveFrame(step)
+    } else if (this.revealedCreateNoteWidgetIndex !== step.widget.widgetIndex) {
+      this.revealedCreateNoteWidgetIndex = -1
+    }
+  }
+
+  private renumberCircuitSteps(areaName: string): void {
+    const steps = this.getStepsForCircuit(this.getActiveCircuit().id)
+    for (let i = 0; i < steps.length; i++) {
+      const step = steps[i]
+      if (step.meta.stepIndex === i) continue
+
+      step.widget.setCircuitStep({
+        ...step.meta,
+        stepIndex: i,
+      })
+      this.widgetController.refreshWidgetLayout(step.widget)
+    }
+    this.widgetController.saveAllWidgets(this.storageController, areaName)
+  }
+
   private getObjectFrameTargetStep(
     steps: CircuitStepRuntime[]
   ): CircuitStepRuntime {
+    if (this.createModeActive) {
+      const selectedStep = this.getSelectedCreateStep(steps)
+      if (selectedStep) return selectedStep
+    }
+
     if (
       this.followActive &&
       this.nextStepIndex >= 0 &&
@@ -805,6 +975,22 @@ export class CircuitController {
       return circuitDataToVec3(frameData.position)
     }
     return step.target.getTransform().getLocalPosition()
+  }
+
+  private positionStepNoteAboveFrame(step: CircuitStepRuntime): boolean {
+    const target = this.widgetController.getTransformTargetForWidget(step.widget)
+    if (!target) return false
+
+    const frameData = step.widget.getObjectFrameData()
+    const yOffset = Math.max(
+      6,
+      frameData && frameData.enabled === true
+        ? frameData.size.y * 0.5 + 3.5
+        : 6
+    )
+    const notePos = this.getStepFollowPosition(step).add(new vec3(0, yOffset, 0))
+    target.getTransform().setLocalPosition(notePos)
+    return true
   }
 
   private getStepGuideLayout(

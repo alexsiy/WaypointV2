@@ -23,6 +23,9 @@ export interface AreaInfo {
 const DEFAULT_COLUMNS = 2
 const DEFAULT_MAX_SLOTS = 6
 const DEFAULT_CELL_SIZE = new vec2(12.2, 5.7)
+const AREA_CARD_X_OFFSET = -0.95
+const AREA_CARD_WIDTH_INSET = 3.35
+const AREA_DELETE_BUTTON_SIZE = new vec2(1.35, 1.35)
 
 /**
  * Builds a grid of area buttons for the My Areas screen.
@@ -40,6 +43,7 @@ export class AreaGridBuilder {
   private buttonObjs: SceneObject[] = []
   private buttons: RectangleButton[] = []
   private textComps: Text[] = []
+  private deleteButtonObjs: SceneObject[] = []
   private areaData: AreaInfo[] = []
   private selectedIndex: number = -1
 
@@ -72,19 +76,22 @@ export class AreaGridBuilder {
         // Occupied area slot
         const area = areas[i]
         btnObj.enabled = true
+        this.setDeleteButtonVisible(i, true)
         ;(btn as any)._style = "Primary"
         textComp.text = area.details
           ? `${area.name}\n${area.details}`
           : `${area.name}\nSaved area`
-        textComp.size = 21
+        textComp.size = 20
       } else if (i === occupiedCount) {
         // "New Area" slot — always visible
         btnObj.enabled = true
+        this.setDeleteButtonVisible(i, false)
         ;(btn as any)._style = "PrimaryNeutral"
         textComp.text = "+\nNew Area"
         textComp.size = 24
       } else {
         // Extra empty slots — hide them
+        this.setDeleteButtonVisible(i, false)
         btnObj.enabled = false
       }
     }
@@ -120,18 +127,23 @@ export class AreaGridBuilder {
 
     // Create all button children first
     for (let i = 0; i < this.maxSlots; i++) {
-      const btnObj = global.scene.createSceneObject(`Area_${i}`)
-      btnObj.setParent(gridObj)
+      const slotObj = global.scene.createSceneObject(`Area_${i}`)
+      slotObj.setParent(gridObj)
+
+      const btnObj = global.scene.createSceneObject(`AreaCard_${i}`)
+      btnObj.setParent(slotObj)
+      btnObj.getTransform().setLocalPosition(new vec3(AREA_CARD_X_OFFSET, 0, 0))
 
       const btn = btnObj.createComponent(RectangleButton.getTypeName()) as RectangleButton
       ;(btn as any)._style = "PrimaryNeutral"
-      const btnW = this.cellSize.x - 1
+      const btnW = this.cellSize.x - AREA_CARD_WIDTH_INSET
       const btnH = this.cellSize.y - 1
       btn.size = new vec3(btnW, btnH, 1)
       btn.renderOrder = 10
       btn.initialize()
 
       const textComp = addButtonLabel(btnObj, `Area ${i + 1}`, btnW, btnH, 22)
+      const deleteObj = this.createDeleteButton(slotObj, i, btnH)
 
       const slotIndex = i
       btn.onTriggerUp.add(() => {
@@ -152,11 +164,12 @@ export class AreaGridBuilder {
       })
 
       // Start hidden — updateAreas will show the right ones
-      btnObj.enabled = false
+      slotObj.enabled = false
 
-      this.buttonObjs.push(btnObj)
+      this.buttonObjs.push(slotObj)
       this.buttons.push(btn)
       this.textComps.push(textComp)
+      this.deleteButtonObjs.push(deleteObj)
     }
 
     // Create and initialize GridLayout AFTER children are added
@@ -168,5 +181,52 @@ export class AreaGridBuilder {
     grid.layout()
 
     this.logger.debug(`AreaGrid built: ${this.columns}x${rows} (${this.maxSlots} slots)`)
+  }
+
+  private createDeleteButton(
+    parent: SceneObject,
+    slotIndex: number,
+    btnH: number
+  ): SceneObject {
+    const deleteObj = global.scene.createSceneObject(`AreaDelete_${slotIndex}`)
+    deleteObj.setParent(parent)
+    deleteObj.enabled = false
+    deleteObj.getTransform().setLocalPosition(
+      new vec3(this.cellSize.x * 0.5 - 0.82, btnH * 0.5 - 0.72, 0.75)
+    )
+
+    const deleteBtn = deleteObj.createComponent(RectangleButton.getTypeName()) as RectangleButton
+    ;(deleteBtn as any)._style = "PrimaryNeutral"
+    deleteBtn.size = new vec3(AREA_DELETE_BUTTON_SIZE.x, AREA_DELETE_BUTTON_SIZE.y, 1)
+    deleteBtn.renderOrder = 14
+    deleteBtn.initialize()
+
+    const label = addButtonLabel(
+      deleteObj,
+      "X",
+      AREA_DELETE_BUTTON_SIZE.x,
+      AREA_DELETE_BUTTON_SIZE.y,
+      18
+    )
+    label.textFill.color = new vec4(1, 0.24, 0.24, 1)
+    label.renderOrder = 16
+
+    deleteBtn.onTriggerUp.add(() => {
+      const occupiedCount = this.areaData.filter((a) => a.occupied).length
+      if (slotIndex >= occupiedCount) return
+
+      const area = this.areaData[slotIndex]
+      this.logger.debug(`Area delete pressed: ${area.name}`)
+      this.eventBus.emit("deleteArea", area)
+    })
+
+    return deleteObj
+  }
+
+  private setDeleteButtonVisible(index: number, visible: boolean): void {
+    const deleteObj = this.deleteButtonObjs[index]
+    if (deleteObj) {
+      deleteObj.enabled = visible
+    }
   }
 }

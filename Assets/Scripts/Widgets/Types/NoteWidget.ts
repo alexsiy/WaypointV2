@@ -179,6 +179,10 @@ export class NoteWidget extends WidgetBase {
 
   setCircuitStep(meta: CircuitStepMeta | null): void {
     this.circuitStep = meta
+    if (this.textComponent) {
+      this.textComponent.text = this.getDisplayText()
+    }
+    this.applyResponsiveLayout()
     this.emitContentChange()
   }
 

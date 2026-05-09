@@ -87,6 +87,8 @@ export class AppController extends BaseScriptComponent {
   private createCircuitMode: boolean = false
   private captureTimerHelper: SceneObject | null = null
   private captureStartTime: number = 0
+  private followPanelAutoMinimized: boolean = false
+  private suppressAreaSelectionUntilMs: number = 0
 
   private anchorUnsubscribes: (() => void)[] = []
   private anchorFallbackTimer: SceneObject | null = null
@@ -263,12 +265,24 @@ export class AppController extends BaseScriptComponent {
       this.startCreateCircuitMode()
     })
 
+    this.eventBus.on("editCircuitSteps", () => {
+      this.startEditCircuitMode()
+    })
+
+    this.eventBus.on("previousCreateStep", () => {
+      this.previousCreateStep()
+    })
+
     this.eventBus.on("nextCreateStep", () => {
-      this.addCircuitStep()
+      this.advanceCreateStepOrAdd()
     })
 
     this.eventBus.on("addNoteToCurrentStep", () => {
       this.addNoteToCurrentStep()
+    })
+
+    this.eventBus.on("removeCurrentStep", () => {
+      this.removeCurrentStep()
     })
 
     this.eventBus.on("finishCreateCircuit", () => {
@@ -317,6 +331,11 @@ export class AppController extends BaseScriptComponent {
     // MyAreasScreen "Delete All Areas" button
     this.eventBus.on("deleteAllAreas", () => {
       this.deleteAllAreas()
+    })
+
+    // Per-area delete buttons in My Areas
+    this.eventBus.on<AreaInfo>("deleteArea", (info) => {
+      this.deleteArea(info)
     })
 
     if (this.enableLogging) this.logger.debug("Event subscriptions registered")
@@ -601,8 +620,18 @@ export class AppController extends BaseScriptComponent {
 
   private refreshCircuitUi(): void {
     if (!this.screenFactory || !this.circuitController) return
+    const following = this.circuitController.isFollowing()
 
-    if (this.currentScreen === AppScreen.InArea && this.uiController) {
+    if (!following && this.followPanelAutoMinimized) {
+      this.uiController?.setPanelMinimized(false)
+      this.followPanelAutoMinimized = false
+    }
+
+    if (
+      this.currentScreen === AppScreen.InArea &&
+      this.uiController &&
+      !this.uiController.isPanelMinimized()
+    ) {
       const frame = this.uiController.getFrame()
       frame.innerSize = this.createCircuitMode
         ? IN_AREA_CREATE_FRAME_SIZE
@@ -614,7 +643,7 @@ export class AppController extends BaseScriptComponent {
     this.screenFactory.setCircuitFollowAvailable(
       this.circuitController.getActiveCircuitStepCount() > 0
     )
-    this.screenFactory.setCircuitFollowActive(this.circuitController.isFollowing())
+    this.screenFactory.setCircuitFollowActive(following)
     this.screenFactory.setCreateMode(
       this.createCircuitMode,
       this.circuitController.getActiveCircuitIndex()
@@ -738,6 +767,11 @@ export class AppController extends BaseScriptComponent {
 
   private handleAreaSelected(info: AreaInfo): void {
     if (this.enableLogging) this.logger.debug(`areaSelected: ${info.name} (index=${info.index})`)
+
+    if (Date.now() < this.suppressAreaSelectionUntilMs) {
+      this.logger.debug("Ignoring area selection immediately after delete")
+      return
+    }
 
     if (!info.occupied) {
       // New Area — go directly to InArea. Anchor is created silently in background.
@@ -867,6 +901,7 @@ export class AppController extends BaseScriptComponent {
   private async finishExitArea(): Promise<void> {
     this.detachWidgetParentFromAnchor()
     this.circuitController?.stopFollow()
+    this.followPanelAutoMinimized = false
 
     // Do NOT close the session here — the cue system in selectArea handles
     // session lifecycle. Closing here cancels any pending saveAnchor with
@@ -980,6 +1015,67 @@ export class AppController extends BaseScriptComponent {
     this.refreshCircuitUi()
   }
 
+  private startEditCircuitMode(): void {
+    if (!this.ensureAreaReady(
+      "Still scanning this area.\nEdit mode unlocks once the route anchor is ready."
+    )) {
+      return
+    }
+
+    if (!this.currentAreaName) {
+      this.logger.error("Cannot edit circuit steps — no active area")
+      return
+    }
+
+    this.createCircuitMode = this.circuitController.startEditingActiveCircuit()
+    this.refreshCircuitUi()
+  }
+
+  private previousCreateStep(): void {
+    if (!this.ensureAreaReady(
+      "Still scanning this area.\nStep editing unlocks once the route anchor is ready."
+    )) {
+      return
+    }
+
+    if (this.circuitController.selectPreviousCreateStep()) {
+      this.createCircuitMode = this.circuitController.isCreateModeActive()
+      this.refreshCircuitUi()
+    }
+  }
+
+  private advanceCreateStepOrAdd(): void {
+    if (!this.currentAreaName) {
+      this.logger.error("Cannot advance/create circuit step — no active area")
+      return
+    }
+
+    if (!this.ensureAreaReady(
+      "Still scanning this area.\nStep editing unlocks once the route anchor is ready."
+    )) {
+      return
+    }
+
+    if (!this.anchorController.anchor && !global.deviceInfoSystem.isEditor()) {
+      this.logger.warn("Cannot advance/create circuit step — anchor not saved yet")
+      this.setAreaReady(
+        false,
+        "Area is not ready yet — keep looking and moving around.\nSteps unlock once the anchor is saved."
+      )
+      return
+    }
+
+    const changed = this.circuitController.advanceCreateStepOrAdd(this.currentAreaName)
+    if (changed) {
+      this.storageController.saveLastCircuitIndex(
+        this.currentAreaName,
+        this.circuitController.getActiveCircuitIndex()
+      )
+      this.createCircuitMode = this.circuitController.isCreateModeActive()
+      this.refreshCircuitUi()
+    }
+  }
+
   private finishCreateCircuitMode(): void {
     this.createCircuitMode = false
     this.circuitController.setCreateModeActive(false)
@@ -993,6 +1089,24 @@ export class AppController extends BaseScriptComponent {
       return
     }
     if (this.circuitController.revealLatestStepNoteAboveBox()) {
+      this.refreshCircuitUi()
+    }
+  }
+
+  private removeCurrentStep(): void {
+    if (!this.currentAreaName) {
+      this.logger.error("Cannot remove circuit step — no active area")
+      return
+    }
+
+    if (!this.ensureAreaReady(
+      "Still scanning this area.\nStep removal unlocks once the route anchor is ready."
+    )) {
+      return
+    }
+
+    if (this.circuitController.removeCurrentStep(this.currentAreaName)) {
+      this.createCircuitMode = this.circuitController.isCreateModeActive()
       this.refreshCircuitUi()
     }
   }
@@ -1065,9 +1179,17 @@ export class AppController extends BaseScriptComponent {
     )) {
       return
     }
+    const wasFollowing = this.circuitController.isFollowing()
     this.createCircuitMode = false
     this.circuitController.setCreateModeActive(false)
-    this.circuitController.toggleFollow()
+    const isFollowing = this.circuitController.toggleFollow()
+    if (isFollowing) {
+      this.uiController?.setPanelMinimized(true)
+      this.followPanelAutoMinimized = true
+    } else if (wasFollowing) {
+      this.uiController?.setPanelMinimized(false)
+      this.followPanelAutoMinimized = false
+    }
     this.refreshCircuitUi()
   }
 
@@ -1122,6 +1244,7 @@ export class AppController extends BaseScriptComponent {
     this.logger.info("deleteAllAreas — clearing all storage")
     this.detachWidgetParentFromAnchor()
     this.circuitController?.stopFollow()
+    this.followPanelAutoMinimized = false
     this.uiController?.setPanelMinimized(false)
     void this.anchorController.closeSession()
     this.storageController.clearAllAreas()
@@ -1130,6 +1253,27 @@ export class AppController extends BaseScriptComponent {
     this.currentAreaId = null
     this.refreshMyAreasGrid()
     this.navigateTo(AppScreen.GetStarted)
+  }
+
+  private deleteArea(info: AreaInfo): void {
+    if (!info.occupied) return
+
+    this.logger.info(`deleteArea — deleting "${info.name}"`)
+
+    if (this.currentAreaName === info.name) {
+      this.detachWidgetParentFromAnchor()
+      this.circuitController?.stopFollow()
+      this.followPanelAutoMinimized = false
+      this.uiController?.setPanelMinimized(false)
+      this.widgetController.clearAllWidgets()
+      this.currentAreaName = null
+      this.currentAreaId = null
+      void this.anchorController.closeSession()
+    }
+
+    this.storageController.deleteArea(info.name)
+    this.suppressAreaSelectionUntilMs = Date.now() + 350
+    this.refreshMyAreasGrid()
   }
 
   // ── Capture Timer ──────────────────────────────────

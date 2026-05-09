@@ -19,7 +19,13 @@ const SCREEN_SIZES: Record<AppScreen, vec2> = {
 }
 
 const TRANSITION_DURATION = 0.4
-const MINIMIZED_PANEL_SIZE = new vec2(16, 5.2)
+const EXPANDED_PANEL_POSITION = new vec3(0, -15, 0)
+const MINIMIZED_PANEL_POSITION = new vec3(0, -27, 0)
+const MINIMIZED_PANEL_SIZE = new vec2(4.9, 1.45)
+const MINIMIZED_PANEL_BORDER = 0.28
+const MINIMIZED_CORNER_RADIUS = 0.55
+const MINIMIZED_RECT_BORDER_SIZE = 0.045
+const RESTORE_BUTTON_SIZE = new vec2(4.25, 1.05)
 
 @component
 export class UIController extends BaseScriptComponent {
@@ -49,6 +55,11 @@ export class UIController extends BaseScriptComponent {
   private restoreContainer: SceneObject | null = null
   private minimized: boolean = false
   private initialized: boolean = false
+  private expandedPanelPosition: vec3 = EXPANDED_PANEL_POSITION
+  private expandedPanelBorder: number = 4
+  private expandedPanelPadding: vec2 = new vec2(0, 0)
+  private expandedCornerRadius: number = 2.25
+  private expandedRectBorderSize: number = 0.25
 
   // ── Lifecycle ──────────────────────────────────────────────
 
@@ -127,6 +138,19 @@ export class UIController extends BaseScriptComponent {
     if (!this.initialized || this.minimized === minimized) return
 
     this.minimized = minimized
+    if (minimized) {
+      this.expandedPanelPosition = this.frameObj.getTransform().getLocalPosition()
+      this.expandedPanelBorder = this.frame.border
+      this.expandedPanelPadding = this.frame.padding
+      this.expandedCornerRadius = this.frame.roundedRectangle.cornerRadius
+      this.expandedRectBorderSize = this.frame.roundedRectangle.borderSize
+      this.applyMinimizedFrameChrome()
+      this.frameObj.getTransform().setLocalPosition(MINIMIZED_PANEL_POSITION)
+    } else {
+      this.restoreExpandedFrameChrome()
+      this.frameObj.getTransform().setLocalPosition(this.expandedPanelPosition)
+    }
+
     const currentContainer = this.currentScreen !== null
       ? this.screenContainers.get(this.currentScreen)
       : undefined
@@ -167,8 +191,7 @@ export class UIController extends BaseScriptComponent {
     this.frame.allowScaling = false
     this.frame.innerSize = SCREEN_SIZES[AppScreen.GetStarted]
     this.frame.showVisual()
-    // Offset the panel down by 10
-    this.frameObj.getTransform().setLocalPosition(new vec3(0, -15, 0))
+    this.frameObj.getTransform().setLocalPosition(EXPANDED_PANEL_POSITION)
     this.logger.info(
       `UIFrame POST-INIT: ` +
       `autoShowHide=${(this.frame as any).autoShowHide}, ` +
@@ -198,14 +221,20 @@ export class UIController extends BaseScriptComponent {
 
     const btnObj = global.scene.createSceneObject("Btn_ShowPanel")
     btnObj.setParent(this.restoreContainer)
-    btnObj.getTransform().setLocalPosition(new vec3(0, 0, 2.8))
+    btnObj.getTransform().setLocalPosition(new vec3(0, 0, 0.9))
 
     const btn = btnObj.createComponent(RectangleButton.getTypeName()) as RectangleButton
     ;(btn as any)._style = "Primary"
-    btn.size = new vec3(13.5, 3.6, 1)
+    btn.size = new vec3(RESTORE_BUTTON_SIZE.x, RESTORE_BUTTON_SIZE.y, 1)
     btn.renderOrder = 12
     btn.initialize()
-    const label = addButtonLabel(btnObj, "Show Panel", 13.5, 3.6, 24)
+    const label = addButtonLabel(
+      btnObj,
+      "Menu",
+      RESTORE_BUTTON_SIZE.x,
+      RESTORE_BUTTON_SIZE.y,
+      12
+    )
     label.renderOrder = 14
     btn.onTriggerUp.add(() => {
       this.eventBus.emit("toggleMainPanelMinimized")
@@ -228,5 +257,19 @@ export class UIController extends BaseScriptComponent {
         this.frame.innerSize = vec2.lerp(startSize, targetSize, t)
       },
     })
+  }
+
+  private applyMinimizedFrameChrome(): void {
+    this.frame.padding = new vec2(0, 0)
+    this.frame.border = MINIMIZED_PANEL_BORDER
+    this.frame.roundedRectangle.cornerRadius = MINIMIZED_CORNER_RADIUS
+    this.frame.roundedRectangle.borderSize = MINIMIZED_RECT_BORDER_SIZE
+  }
+
+  private restoreExpandedFrameChrome(): void {
+    this.frame.padding = this.expandedPanelPadding
+    this.frame.border = this.expandedPanelBorder
+    this.frame.roundedRectangle.cornerRadius = this.expandedCornerRadius
+    this.frame.roundedRectangle.borderSize = this.expandedRectBorderSize
   }
 }
