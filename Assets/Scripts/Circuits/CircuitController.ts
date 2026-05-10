@@ -12,6 +12,7 @@ import {
   vec3ToCircuitData,
 } from "./CircuitTypes"
 import {CircuitPathVisualizer} from "./CircuitPathVisualizer"
+import {VoiceNoteController} from "../Audio/VoiceNoteController"
 
 const STEP_TRIGGER_RADIUS_CM = 85
 const STEP_HOLD_SECONDS = 1.1
@@ -21,6 +22,7 @@ const FRAME_GUIDE_BORDER_OUTSET_CM = 0.8
 const FRAME_GUIDE_CORNER_OUTSET_CM = 1.2
 const FRAME_GUIDE_MIN_CORNER_BIAS_CM = 0.5
 const FRAME_GUIDE_PIN_FRONT_OFFSET_CM = 2.4
+const FOLLOW_FINISH_AFTER_VOICE_DELAY_MS = 350
 
 interface CircuitStepRuntime {
   widget: NoteWidget
@@ -47,6 +49,12 @@ export class CircuitController {
   private enteredStepAt: number = -1
   private currentAreaName: string | null = null
   private pathVisualizer: CircuitPathVisualizer
+  private voiceNoteController: VoiceNoteController | null = null
+  private voiceGuideStepWidgetIndex: number = -1
+  private pendingVoiceGuideFinishedWidgetIndex: number = -1
+  private pendingFollowFinishMessage: string | null = null
+  private pendingFollowFinishAtMs: number = 0
+  private playedVoiceStepWidgetIndices: Set<number> = new Set()
 
   constructor(
     widgetController: WidgetController,
@@ -54,7 +62,8 @@ export class CircuitController {
     camera: Camera,
     widgetParent: SceneObject,
     logger: Logger,
-    statusCallback: (text: string) => void
+    statusCallback: (text: string) => void,
+    voiceNoteController?: VoiceNoteController
   ) {
     this.widgetController = widgetController
     this.storageController = storageController
@@ -63,6 +72,7 @@ export class CircuitController {
     this.logger = logger
     this.statusCallback = statusCallback
     this.pathVisualizer = new CircuitPathVisualizer(widgetParent, logger)
+    this.voiceNoteController = voiceNoteController ?? null
   }
 
   setArea(areaName: string | null): void {
@@ -74,6 +84,9 @@ export class CircuitController {
     this.nextStepIndex = 0
     this.enteredStepAt = -1
     this.lastStatusAt = 0
+    this.pendingFollowFinishMessage = null
+    this.pendingFollowFinishAtMs = 0
+    this.resetVoiceGuideState()
     this.clearGuide()
     this.applyActiveCircuitVisibility()
   }
@@ -116,8 +129,32 @@ export class CircuitController {
     return this.createModeActive
   }
 
+  getCurrentVoiceNoteTarget(): NoteWidget | null {
+    const steps = this.getStepsForCircuit(this.getActiveCircuit().id)
+    if (steps.length === 0) return null
+
+    if (
+      this.followActive &&
+      this.nextStepIndex >= 0 &&
+      this.nextStepIndex < steps.length
+    ) {
+      return steps[this.nextStepIndex].widget
+    }
+
+    if (this.currentCreateStepWidgetIndex >= 0) {
+      const current = steps.find(
+        (step) => step.widget.widgetIndex === this.currentCreateStepWidgetIndex
+      )
+      if (current) return current.widget
+    }
+
+    return steps[steps.length - 1].widget
+  }
+
   setCreateModeActive(active: boolean): void {
     this.createModeActive = active
+    this.pendingFollowFinishMessage = null
+    this.pendingFollowFinishAtMs = 0
     if (!active) {
       this.currentCreateStepWidgetIndex = -1
       this.revealedCreateNoteWidgetIndex = -1
@@ -127,6 +164,7 @@ export class CircuitController {
       this.nextStepIndex = 0
       this.enteredStepAt = -1
       this.lastStatusAt = 0
+      this.resetVoiceGuideState()
       this.clearGuide()
       if (this.currentCreateStepWidgetIndex < 0) {
         const steps = this.getStepsForCircuit(this.getActiveCircuit().id)
@@ -160,8 +198,15 @@ export class CircuitController {
     if (this.followActive) {
       const current = Math.min(this.nextStepIndex + 1, total)
       if (this.nextStepIndex >= 0 && this.nextStepIndex < total) {
+        const currentStep = activeSteps[this.nextStepIndex]
+        if (this.isVoiceGuidePlayingForStep(currentStep)) {
+          return (
+            `Following · Step ${current}/${total}\n` +
+            `Voice guide playing · ${this.voiceNoteController?.getPlaybackRemainingSeconds().toFixed(1) ?? "0.0"}s left.`
+          )
+        }
         const userPos = this.getCameraLocalPosition()
-        const stepPos = this.getStepFollowPosition(activeSteps[this.nextStepIndex])
+        const stepPos = this.getStepFollowPosition(currentStep)
         const distance = userPos.distance(stepPos)
         return `Following · Step ${current}/${total}\n${this.formatDistance(distance)} away. ${this.describeDirection(userPos, stepPos)}`
       }
@@ -194,6 +239,9 @@ export class CircuitController {
     this.nextStepIndex = 0
     this.enteredStepAt = -1
     this.lastStatusAt = 0
+    this.pendingFollowFinishMessage = null
+    this.pendingFollowFinishAtMs = 0
+    this.resetVoiceGuideState()
     this.clearGuide()
     this.applyActiveCircuitVisibility()
     const stepCount = this.getActiveCircuitStepCount()
@@ -233,6 +281,7 @@ export class CircuitController {
     this.nextStepIndex = 0
     this.enteredStepAt = -1
     this.lastStatusAt = 0
+    this.resetVoiceGuideState()
     this.clearGuide()
     this.applyActiveCircuitVisibility()
     return this.getActiveCircuitName()
@@ -340,6 +389,7 @@ export class CircuitController {
     this.nextStepIndex = 0
     this.enteredStepAt = -1
     this.lastStatusAt = 0
+    this.resetVoiceGuideState()
     this.clearGuide()
     this.selectCreateStep(steps[0], true)
     this.applyActiveCircuitVisibility()
@@ -405,6 +455,15 @@ export class CircuitController {
     const selectedStep = this.getSelectedCreateStep(steps) ?? steps[steps.length - 1]
     const removedStepIndex = selectedStep.meta.stepIndex
     const removedStepNumber = removedStepIndex + 1
+    if (this.voiceNoteController?.isRecording()) {
+      this.voiceNoteController.stopRecording()
+    }
+    const removedVoice = selectedStep.widget.getVoiceNoteData()
+    if (removedVoice) {
+      this.storageController.deleteVoiceNote(areaName, removedVoice.id)
+      selectedStep.widget.setVoiceNoteData(null, false)
+    }
+    this.stopVoiceGuide(false)
     if (!this.widgetController.removeWidgetByIndex(
       selectedStep.widget.widgetIndex,
       this.storageController,
@@ -465,6 +524,9 @@ export class CircuitController {
     this.revealedCreateNoteWidgetIndex = -1
     this.nextStepIndex = 0
     this.enteredStepAt = -1
+    this.pendingFollowFinishMessage = null
+    this.pendingFollowFinishAtMs = 0
+    this.resetVoiceGuideState()
     this.clearGuide()
     this.applyActiveCircuitVisibility()
   }
@@ -488,6 +550,7 @@ export class CircuitController {
       return true
     }
 
+    this.stopVoiceGuide(false)
     this.advanceFromCurrentStep(steps, "manual")
     return true
   }
@@ -548,26 +611,60 @@ export class CircuitController {
     return true
   }
 
+  toggleVoiceRecordingForCurrentStep(areaName: string): boolean {
+    if (!this.voiceNoteController) {
+      this.statusCallback("Voice recording is not available yet.")
+      return false
+    }
+
+    const stepNote = this.getCurrentVoiceNoteTarget()
+    if (!stepNote) {
+      this.statusCallback(
+        `${this.getActiveCircuitName()} has no steps yet.\nTap Create to add Step 1 first.`
+      )
+      return false
+    }
+
+    const result = this.voiceNoteController.toggleRecording(stepNote, areaName)
+    if (result.success) {
+      this.widgetController.saveAllWidgets(this.storageController, areaName)
+    }
+    this.statusCallback(result.message)
+    return result.success
+  }
+
   update(): boolean {
-    if (!this.followActive) return false
+    if (!this.followActive) {
+      this.pendingVoiceGuideFinishedWidgetIndex = -1
+      this.pendingFollowFinishMessage = null
+      this.pendingFollowFinishAtMs = 0
+      return false
+    }
+
+    const now = Date.now()
+
+    if (this.pendingFollowFinishMessage) {
+      if (now >= this.pendingFollowFinishAtMs) {
+        const message = this.pendingFollowFinishMessage
+        this.pendingFollowFinishMessage = null
+        this.pendingFollowFinishAtMs = 0
+        this.finishFollow(message)
+        return true
+      }
+      return false
+    }
+
+    if (this.pendingVoiceGuideFinishedWidgetIndex >= 0) {
+      const finishedWidgetIndex = this.pendingVoiceGuideFinishedWidgetIndex
+      this.pendingVoiceGuideFinishedWidgetIndex = -1
+      this.onVoiceGuideFinished(finishedWidgetIndex)
+      return true
+    }
 
     const steps = this.getStepsForCircuit(this.getActiveCircuit().id)
     if (steps.length === 0) {
       this.finishFollow(`${this.getActiveCircuitName()} has no steps.`)
       return true
-    }
-
-    if (steps.length < 2) {
-      const now = Date.now()
-      if (now - this.lastStatusAt >= STATUS_UPDATE_INTERVAL_MS) {
-        this.lastStatusAt = now
-        this.updateGuide(steps)
-        this.statusCallback(
-          `${this.getActiveCircuitName()} is following Step 1/${steps.length}.\nAdd another step later if you want a longer route.`
-        )
-        return true
-      }
-      return false
     }
 
     if (this.nextStepIndex >= steps.length) {
@@ -581,13 +678,36 @@ export class CircuitController {
     const userPos = this.getCameraLocalPosition()
     const stepPos = this.getStepFollowPosition(currentStep)
     const distance = userPos.distance(stepPos)
-    const now = Date.now()
+
+    if (this.isVoiceGuidePlayingForStep(currentStep)) {
+      if (now - this.lastStatusAt >= STATUS_UPDATE_INTERVAL_MS) {
+        this.lastStatusAt = now
+        this.statusCallback(
+          `Listening at step ${this.nextStepIndex + 1}/${steps.length}.\n` +
+            `Next stop appears when the guide finishes.`
+        )
+        return true
+      }
+      return false
+    }
 
     if (distance <= STEP_TRIGGER_RADIUS_CM) {
+      if (this.tryStartVoiceGuide(currentStep, steps.length)) {
+        this.lastStatusAt = now
+        return true
+      }
+
       if (this.enteredStepAt < 0) {
         this.enteredStepAt = now
+        const voiceError =
+          currentStep.widget.hasVoiceNote()
+            ? this.voiceNoteController?.getLastPlaybackError() ?? ""
+            : ""
         this.statusCallback(
-          `At step ${this.nextStepIndex + 1}/${steps.length}.\nHold here to collect this stop.`
+          `At step ${this.nextStepIndex + 1}/${steps.length}.\n` +
+            (currentStep.widget.hasVoiceNote()
+              ? `${voiceError !== "" ? voiceError + " " : ""}Hold here to collect this stop.`
+              : "Hold here to collect this stop.")
         )
         this.updateGuide(steps)
         this.lastStatusAt = now
@@ -744,6 +864,13 @@ export class CircuitController {
   }
 
   private selectCreateStep(step: CircuitStepRuntime, revealNote: boolean): void {
+    if (
+      this.voiceNoteController?.isRecording() === true &&
+      this.currentCreateStepWidgetIndex !== step.widget.widgetIndex
+    ) {
+      this.voiceNoteController.stopRecording()
+    }
+    this.stopVoiceGuide(false)
     this.currentCreateStepWidgetIndex = step.widget.widgetIndex
     if (revealNote) {
       this.revealedCreateNoteWidgetIndex = step.widget.widgetIndex
@@ -887,27 +1014,145 @@ export class CircuitController {
     }
   }
 
+  private tryStartVoiceGuide(step: CircuitStepRuntime, totalSteps: number): boolean {
+    if (!this.voiceNoteController || !this.currentAreaName) return false
+    if (this.playedVoiceStepWidgetIndices.has(step.widget.widgetIndex)) return false
+    if (!this.voiceNoteController.hasPlayableVoice(step.widget, this.currentAreaName)) {
+      return false
+    }
+
+    const started = this.voiceNoteController.playVoiceForNote(
+      step.widget,
+      this.currentAreaName,
+      () => this.queueVoiceGuideFinished(step.widget.widgetIndex)
+    )
+    if (!started) {
+      const error = this.voiceNoteController.getLastPlaybackError()
+      if (error !== "") {
+        this.statusCallback(`${error}\nHold here to collect this stop instead.`)
+      }
+      return false
+    }
+
+    this.voiceGuideStepWidgetIndex = step.widget.widgetIndex
+    this.enteredStepAt = -1
+    this.updateGuide()
+    this.statusCallback(
+      `Voice guide playing for step ${this.nextStepIndex + 1}/${totalSteps}.\n` +
+        "Stay nearby. The next stop appears when it finishes."
+    )
+    return true
+  }
+
+  private queueVoiceGuideFinished(widgetIndex: number): void {
+    if (widgetIndex < 0) return
+    this.pendingVoiceGuideFinishedWidgetIndex = widgetIndex
+  }
+
+  private onVoiceGuideFinished(widgetIndex: number): void {
+    try {
+      if (!this.followActive || widgetIndex !== this.voiceGuideStepWidgetIndex) {
+        return
+      }
+
+      const steps = this.getStepsForCircuit(this.getActiveCircuit().id)
+      const finishedStepIndex = steps.findIndex(
+        (step) => step.widget.widgetIndex === widgetIndex
+      )
+      if (finishedStepIndex < 0) {
+        this.voiceGuideStepWidgetIndex = -1
+        this.enteredStepAt = -1
+        this.applyActiveCircuitVisibility()
+        return
+      }
+
+      if (this.nextStepIndex !== finishedStepIndex) {
+        if (finishedStepIndex < this.nextStepIndex) {
+          this.voiceGuideStepWidgetIndex = -1
+          return
+        }
+        this.nextStepIndex = finishedStepIndex
+      }
+
+      this.advanceFromCurrentStep(steps, "voice")
+      this.lastStatusAt = Date.now()
+    } catch (e) {
+      this.logger.error(`Voice guide finish failed: ${e}`)
+      this.voiceGuideStepWidgetIndex = -1
+      this.enteredStepAt = -1
+      this.applyActiveCircuitVisibility()
+      this.statusCallback(
+        "Voice guide finished, but the path state changed.\nTap Follow to continue."
+      )
+    }
+  }
+
+  private isVoiceGuidePlayingForStep(step: CircuitStepRuntime): boolean {
+    return (
+      this.voiceGuideStepWidgetIndex === step.widget.widgetIndex &&
+      this.voiceNoteController?.isPlayingForNote(step.widget) === true
+    )
+  }
+
+  private stopVoiceGuide(callFinished: boolean): void {
+    this.voiceNoteController?.stopPlayback(callFinished)
+    this.voiceGuideStepWidgetIndex = -1
+    this.pendingVoiceGuideFinishedWidgetIndex = -1
+  }
+
+  private resetVoiceGuideState(): void {
+    this.stopVoiceGuide(false)
+    this.playedVoiceStepWidgetIndices.clear()
+  }
+
+  private getAdvanceSourceText(source: "hold" | "manual" | "voice"): string {
+    if (source === "manual") return "Advanced manually."
+    if (source === "voice") return "Voice guide finished."
+    return "Collected."
+  }
+
   private advanceFromCurrentStep(
     steps: CircuitStepRuntime[],
-    source: "hold" | "manual"
+    source: "hold" | "manual" | "voice"
   ): void {
+    if (this.nextStepIndex < 0 || this.nextStepIndex >= steps.length) {
+      this.finishFollow(
+        `${this.getActiveCircuitName()} complete.\nAuthoring mode is active again.`
+      )
+      return
+    }
+
     const currentStep = steps[this.nextStepIndex]
     const reachedText = this.buildStepReachedText(currentStep, steps.length)
 
+    this.playedVoiceStepWidgetIndices.add(currentStep.widget.widgetIndex)
+    this.voiceGuideStepWidgetIndex = -1
     this.nextStepIndex++
     this.enteredStepAt = -1
 
     if (this.nextStepIndex >= steps.length) {
-      this.finishFollow(
-        `${reachedText}\n${source === "manual" ? "Advanced manually." : "Collected."}\nPath complete.`
-      )
+      const message = `${reachedText}\n${this.getAdvanceSourceText(source)}\nPath complete.`
+      if (source === "voice") {
+        this.queueFollowFinish(message)
+      } else {
+        this.finishFollow(message)
+      }
       return
     }
 
     this.applyActiveCircuitVisibility()
     this.statusCallback(
-      `${reachedText}\nNow showing step ${this.nextStepIndex + 1}/${steps.length}.`
+      `${reachedText}\n${this.getAdvanceSourceText(source)}\n` +
+        `Now showing step ${this.nextStepIndex + 1}/${steps.length}.`
     )
+  }
+
+  private queueFollowFinish(message: string): void {
+    this.pendingFollowFinishMessage = message
+    this.pendingFollowFinishAtMs = Date.now() + FOLLOW_FINISH_AFTER_VOICE_DELAY_MS
+    // Keep the current guide stable while the audio output drains; finishFollow()
+    // will clear and restore authoring visibility on the next queued update.
+    this.statusCallback(message)
   }
 
   private finishFollow(message: string): void {
@@ -916,6 +1161,10 @@ export class CircuitController {
     this.revealedCreateNoteWidgetIndex = -1
     this.nextStepIndex = 0
     this.enteredStepAt = -1
+    this.pendingFollowFinishMessage = null
+    this.pendingFollowFinishAtMs = 0
+    this.stopVoiceGuide(false)
+    this.playedVoiceStepWidgetIndices.clear()
     this.clearGuide()
     this.applyActiveCircuitVisibility()
     this.statusCallback(message)
@@ -929,11 +1178,14 @@ export class CircuitController {
     this.nextStepIndex = 0
     this.enteredStepAt = -1
     this.lastStatusAt = 0
+    this.pendingFollowFinishMessage = null
+    this.pendingFollowFinishAtMs = 0
+    this.resetVoiceGuideState()
     this.applyActiveCircuitVisibility()
     this.statusCallback(
       stepCount < 2
-        ? `${this.getActiveCircuitName()} follow started at Step 1/${stepCount}.\nAdd another step to create a longer route.`
-        : `Walkthrough started at Step 1/${stepCount}.\nFollow the yellow guide, then hold there or press Next.`
+        ? `${this.getActiveCircuitName()} follow started at Step 1/${stepCount}.\nWalk to the highlighted stop; voice plays when available.`
+        : `Walkthrough started at Step 1/${stepCount}.\nFollow the yellow guide. Voice guides play when you arrive.`
     )
   }
 

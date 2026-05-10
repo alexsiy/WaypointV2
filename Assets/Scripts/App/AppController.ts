@@ -10,6 +10,7 @@ import {WidgetController} from "../Widgets/WidgetController"
 import {WidgetType} from "../Widgets/WidgetTypes"
 import {SnapToSurface} from "../Widgets/Actions/SnapToSurface"
 import {CircuitController} from "../Circuits/CircuitController"
+import {VoiceNoteController} from "../Audio/VoiceNoteController"
 import {AreaInfo} from "../UI/Components/AreaGridBuilder"
 import {MAX_AREAS, CAMERA_GAZE_OFFSET, CAPTURE_ANCHOR_FORWARD_DISTANCE, LOCALIZATION_TIMEOUT_MS} from "../Shared/Constants"
 import {Anchor} from "Spatial Anchors.lspkg/Anchor"
@@ -61,6 +62,24 @@ export class AppController extends BaseScriptComponent {
   @hint("Prefab for Photo Widget (scene object with PhotoWidget script)")
   photoWidgetPrefab: ObjectPrefab
 
+  // ── Voice Notes ─────────────────────────────────────
+  @ui.separator
+  @ui.label('<span style="color: #60A5FA;">Voice Notes</span>')
+
+  @input
+  @allowUndefined
+  @hint("Required Audio From Microphone asset. Keep wired so Spectacles declares microphone permission.")
+  voiceMicrophoneAsset: AudioTrackAsset
+
+  @input
+  @allowUndefined
+  @hint("Required Audio Output asset for voice guide playback.")
+  voiceAudioOutput: AudioTrackAsset
+
+  @input
+  @hint("Maximum seconds per recorded step voice guide")
+  voiceNoteMaxSeconds: number = 20
+
   // ── Logging ──────────────────────────────────────────
   @ui.separator
   @ui.label('<span style="color: #60A5FA;">Logging</span>')
@@ -103,6 +122,7 @@ export class AppController extends BaseScriptComponent {
   private widgetController: WidgetController
   private snapToSurface: SnapToSurface
   private circuitController: CircuitController
+  private voiceNoteController: VoiceNoteController
 
   onAwake(): void {
     this.logger = new Logger("AppController", this.enableLogging || this.enableLoggingLifecycle, true)
@@ -149,6 +169,14 @@ export class AppController extends BaseScriptComponent {
     if (this.photoWidgetPrefab) prefabMap[WidgetType.Photo] = this.photoWidgetPrefab
     this.widgetController = new WidgetController(this.widgetParent, this.logger, prefabMap)
     this.snapToSurface = new SnapToSurface(this.worldQueryModule, this.logger)
+    this.voiceNoteController = new VoiceNoteController(
+      this.getSceneObject(),
+      this.storageController,
+      this.logger,
+      this.voiceMicrophoneAsset,
+      this.voiceAudioOutput,
+      this.voiceNoteMaxSeconds
+    )
     this.circuitController = new CircuitController(
       this.widgetController,
       this.storageController,
@@ -161,7 +189,8 @@ export class AppController extends BaseScriptComponent {
         } else {
           this.screenFactory?.setLocalizationStatus(text)
         }
-      }
+      },
+      this.voiceNoteController
     )
 
     // Single UIController: reuse the scene's "UIController" object if present, or a
@@ -213,7 +242,9 @@ export class AppController extends BaseScriptComponent {
     const updateEvent = this.createEvent("UpdateEvent") as SceneEvent
     updateEvent.bind(() => {
       if (this.currentScreen === AppScreen.InArea) {
-        if (this.circuitController?.update()) {
+        const voiceChanged = this.voiceNoteController?.update() === true
+        const circuitChanged = this.circuitController?.update() === true
+        if (voiceChanged || circuitChanged) {
           this.refreshCircuitUi()
         }
       }
@@ -291,6 +322,10 @@ export class AppController extends BaseScriptComponent {
 
     this.eventBus.on("toggleStepObjectFrame", () => {
       this.toggleStepObjectFrame()
+    })
+
+    this.eventBus.on("toggleStepVoiceRecording", () => {
+      this.toggleStepVoiceRecording()
     })
 
     this.eventBus.on("nextCircuit", () => {
@@ -654,6 +689,12 @@ export class AppController extends BaseScriptComponent {
         !this.circuitController.isFollowing() &&
         this.circuitController.getActiveCircuitStepCount() === 0
     )
+    this.screenFactory.setVoiceNoteState(
+      this.voiceNoteController.getUiState(
+        this.circuitController.getCurrentVoiceNoteTarget(),
+        this.currentAreaName
+      )
+    )
   }
 
   private setAreaReady(ready: boolean, statusText?: string): void {
@@ -900,6 +941,10 @@ export class AppController extends BaseScriptComponent {
 
   private async finishExitArea(): Promise<void> {
     this.detachWidgetParentFromAnchor()
+    if (this.voiceNoteController?.isRecording()) {
+      this.voiceNoteController.stopRecording()
+    }
+    this.voiceNoteController?.stopPlayback(false)
     this.circuitController?.stopFollow()
     this.followPanelAutoMinimized = false
 
@@ -977,6 +1022,10 @@ export class AppController extends BaseScriptComponent {
         "Area is not ready yet — keep looking and moving around.\nSteps unlock once the anchor is saved."
       )
       return false
+    }
+
+    if (this.voiceNoteController?.isRecording()) {
+      this.voiceNoteController.stopRecording()
     }
 
     const added = this.circuitController.addStep(this.currentAreaName)
@@ -1077,6 +1126,9 @@ export class AppController extends BaseScriptComponent {
   }
 
   private finishCreateCircuitMode(): void {
+    if (this.voiceNoteController?.isRecording()) {
+      this.voiceNoteController.stopRecording()
+    }
     this.createCircuitMode = false
     this.circuitController.setCreateModeActive(false)
     this.refreshCircuitUi()
@@ -1137,11 +1189,33 @@ export class AppController extends BaseScriptComponent {
     }
   }
 
+  private toggleStepVoiceRecording(): void {
+    if (!this.currentAreaName) {
+      this.logger.error("Cannot record voice — no active area")
+      return
+    }
+
+    if (!this.ensureAreaReady(
+      "Still scanning this area.\nVoice recording unlocks once the route anchor is ready."
+    )) {
+      return
+    }
+
+    if (this.circuitController.toggleVoiceRecordingForCurrentStep(this.currentAreaName)) {
+      this.refreshCircuitUi()
+    } else {
+      this.refreshCircuitUi()
+    }
+  }
+
   private nextCircuit(): void {
     if (!this.ensureAreaReady(
       "Still scanning this area.\nCircuits unlock once the saved space is found."
     )) {
       return
+    }
+    if (this.voiceNoteController?.isRecording()) {
+      this.voiceNoteController.stopRecording()
     }
     this.createCircuitMode = false
     this.circuitController.setCreateModeActive(false)
@@ -1160,6 +1234,9 @@ export class AppController extends BaseScriptComponent {
       "Still scanning this area.\nCircuits unlock once the saved space is found."
     )) {
       return
+    }
+    if (this.voiceNoteController?.isRecording()) {
+      this.voiceNoteController.stopRecording()
     }
     this.createCircuitMode = false
     this.circuitController.setCreateModeActive(false)
@@ -1180,6 +1257,9 @@ export class AppController extends BaseScriptComponent {
       return
     }
     const wasFollowing = this.circuitController.isFollowing()
+    if (this.voiceNoteController?.isRecording()) {
+      this.voiceNoteController.stopRecording()
+    }
     this.createCircuitMode = false
     this.circuitController.setCreateModeActive(false)
     const isFollowing = this.circuitController.toggleFollow()
@@ -1243,6 +1323,10 @@ export class AppController extends BaseScriptComponent {
   private deleteAllAreas(): void {
     this.logger.info("deleteAllAreas — clearing all storage")
     this.detachWidgetParentFromAnchor()
+    if (this.voiceNoteController?.isRecording()) {
+      this.voiceNoteController.stopRecording()
+    }
+    this.voiceNoteController?.stopPlayback(false)
     this.circuitController?.stopFollow()
     this.followPanelAutoMinimized = false
     this.uiController?.setPanelMinimized(false)
@@ -1374,6 +1458,10 @@ export class AppController extends BaseScriptComponent {
 
   private cleanup(): void {
     this.stopCaptureTimer()
+    if (this.voiceNoteController?.isRecording()) {
+      this.voiceNoteController.stopRecording()
+    }
+    this.voiceNoteController?.stopPlayback(false)
     this.eventBus.removeAllListeners()
     void this.anchorController?.closeSession()
     this.widgetController?.clearAllWidgets()

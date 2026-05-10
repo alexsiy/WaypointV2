@@ -4,10 +4,16 @@ import {Logger} from "Utilities.lspkg/Scripts/Utils/Logger"
 import {EventBus} from "../../Shared/EventBus"
 import {addButtonLabel} from "../../Shared/ButtonTextHelper"
 import {DEFAULT_CIRCUITS} from "../../Circuits/CircuitTypes"
+import {VoiceNoteUiState} from "../../Audio/VoiceNoteController"
 
 const WIDGET_TYPE_MAP: Record<string, string> = {
   "Note +": "note",
 }
+const CIRCUIT_EDIT_BUTTON_FONT_SIZE = 27
+const CIRCUIT_SELECTION_MATERIAL = requireAsset("Materials/WidgetSelectionUIBackground.mat") as Material
+const CIRCUIT_SELECTION_COLOR = new vec4(1, 0.9, 0.22, 1)
+const CIRCUIT_SELECTION_DISABLED_COLOR = new vec4(0.72, 0.95, 1, 0.55)
+const CIRCUIT_SELECTION_CORNER_SEGMENTS = 8
 
 interface ButtonConfig {
   label: string
@@ -25,6 +31,7 @@ interface LayerButtonRef {
   index: number
   btn: RectangleButton
   text: Text
+  selectionRing: SceneObject
 }
 
 interface ManagedButtonRef {
@@ -66,6 +73,10 @@ export class InAreaScreen {
   private createCircuitButton: RectangleButton | null = null
   private createModeActive: boolean = false
   private createModeHeaderComp: Text | null = null
+  private voiceTextComp: Text | null = null
+  private voiceButton: RectangleButton | null = null
+  private voiceStatusComp: Text | null = null
+  private voiceState: VoiceNoteUiState | null = null
   private createModeRoots: SceneObject[] = []
   private followModeRoots: SceneObject[] = []
   private selectedCircuitName: string = DEFAULT_CIRCUITS[0].name
@@ -158,6 +169,11 @@ export class InAreaScreen {
       const stepCount = this.circuitStepCounts[layer.index] ?? 0
       const hasSteps = stepCount > 0
       ;(layer.btn as any)._style = "PrimaryNeutral"
+      layer.selectionRing.enabled = active && this.areaReady
+      this.setSelectionRingColor(
+        layer.selectionRing,
+        this.followActive ? CIRCUIT_SELECTION_DISABLED_COLOR : CIRCUIT_SELECTION_COLOR
+      )
       layer.text.text = `${layer.index + 1}`
       layer.text.size = active
         ? hasSteps
@@ -248,6 +264,11 @@ export class InAreaScreen {
     this.refreshFollowHeading()
     this.refreshLayerButtons()
     this.applyButtonAvailability()
+  }
+
+  setVoiceNoteState(state: VoiceNoteUiState): void {
+    this.voiceState = state
+    this.refreshVoiceNoteControls()
   }
 
   // ── Internal ───────────────────────────────────────────
@@ -395,15 +416,15 @@ export class InAreaScreen {
           label: "Prev",
           event: "previousCreateStep",
           style: "PrimaryNeutral",
-          fontSize: 22,
+          fontSize: CIRCUIT_EDIT_BUTTON_FONT_SIZE,
           requiresAreaReady: true,
           disabledWhenFollowing: true,
         },
         {
-          label: "Step Note",
+          label: "Note",
           event: "addNoteToCurrentStep",
           style: "PrimaryNeutral",
-          fontSize: 20,
+          fontSize: CIRCUIT_EDIT_BUTTON_FONT_SIZE,
           requiresAreaReady: true,
           disabledWhenFollowing: true,
         },
@@ -411,7 +432,15 @@ export class InAreaScreen {
           label: "Frame",
           event: "toggleStepObjectFrame",
           style: "PrimaryNeutral",
-          fontSize: 22,
+          fontSize: CIRCUIT_EDIT_BUTTON_FONT_SIZE,
+          requiresAreaReady: true,
+          disabledWhenFollowing: true,
+        },
+        {
+          label: "Voice",
+          event: "toggleStepVoiceRecording",
+          style: "PrimaryNeutral",
+          fontSize: CIRCUIT_EDIT_BUTTON_FONT_SIZE,
           requiresAreaReady: true,
           disabledWhenFollowing: true,
         },
@@ -419,14 +448,14 @@ export class InAreaScreen {
           label: "Remove",
           event: "removeCurrentStep",
           style: "PrimaryNeutral",
-          fontSize: 21,
+          fontSize: CIRCUIT_EDIT_BUTTON_FONT_SIZE,
           requiresAreaReady: true,
           disabledWhenFollowing: true,
         },
       ],
-      new vec3(0, 0.7, 2),
-      new vec2(5.35, 3.25),
-      4
+      new vec3(0, 0.65, 2),
+      new vec2(4.25, 3.25),
+      5
     )
     this.buildGridRow(
       "CreateModeNextFinish",
@@ -452,6 +481,22 @@ export class InAreaScreen {
       new vec2(8.2, 3.5),
       2
     )
+
+    const voiceObj = global.scene.createSceneObject("CreateModeVoiceStatus")
+    voiceObj.setParent(this.container)
+    this.createModeRoots.push(voiceObj)
+    this.voiceStatusComp = voiceObj.createComponent("Component.Text") as Text
+    this.voiceStatusComp.text = "Optional: record a short guide for this stop."
+    this.voiceStatusComp.size = 23
+    this.voiceStatusComp.worldSpaceRect = Rect.create(-8.8, 8.8, -1.0, 1.0)
+    this.voiceStatusComp.horizontalOverflow = HorizontalOverflow.Wrap
+    this.voiceStatusComp.verticalOverflow = VerticalOverflow.Shrink
+    this.voiceStatusComp.horizontalAlignment = HorizontalAlignment.Center
+    this.voiceStatusComp.verticalAlignment = VerticalAlignment.Center
+    this.voiceStatusComp.textFill.mode = TextFillMode.Solid
+    this.voiceStatusComp.textFill.color = new vec4(0.72, 0.95, 1, 0.95)
+    this.voiceStatusComp.renderOrder = 10
+    voiceObj.getTransform().setLocalPosition(new vec3(0, -5.65, 2))
   }
 
   private buildExitButton(): void {
@@ -516,8 +561,10 @@ export class InAreaScreen {
       btn.renderOrder = 10
       btn.initialize()
       let textComp: Text
+      let selectionRing: SceneObject | null = null
       if (/^Circuit \d+$/.test(config.label)) {
         const layerIndex = parseInt(config.label.replace("Circuit ", ""), 10) - 1
+        selectionRing = this.createCircuitSelectionRing(btnObj, btnW, btnH)
         textComp = this.createCircuitBadgeButton(btnObj, btnW, btnH, Math.max(0, layerIndex))
       } else {
         textComp = addButtonLabel(
@@ -544,6 +591,7 @@ export class InAreaScreen {
           index: Math.max(0, layerIndex),
           btn,
           text: textComp,
+          selectionRing: selectionRing ?? this.createCircuitSelectionRing(btnObj, btnW, btnH),
         })
       }
 
@@ -560,6 +608,11 @@ export class InAreaScreen {
       if (config.event === "advanceCircuitStep") {
         this.nextStepTextComp = textComp
         this.nextStepButton = btn
+      }
+
+      if (config.event === "toggleStepVoiceRecording") {
+        this.voiceTextComp = textComp
+        this.voiceButton = btn
       }
 
       const buttonConfig = config
@@ -602,6 +655,133 @@ export class InAreaScreen {
     grid.cellSize = cellSize
     grid.initialize()
     grid.layout()
+  }
+
+  private createCircuitSelectionRing(
+    btnObj: SceneObject,
+    btnWidth: number,
+    btnHeight: number
+  ): SceneObject {
+    const ring = global.scene.createSceneObject("CircuitSelectionRing")
+    ring.setParent(btnObj)
+    ring.getTransform().setLocalPosition(new vec3(0, 0, 0.18))
+
+    const width = btnWidth + 0.38
+    const height = btnHeight + 0.38
+    const thickness = 0.22
+    const radius = Math.min(width, height) * 0.24
+    this.createCircuitSelectionOutline(ring, width, height, thickness, radius)
+
+    ring.enabled = false
+    return ring
+  }
+
+  private createCircuitSelectionOutline(
+    parent: SceneObject,
+    width: number,
+    height: number,
+    thickness: number,
+    radius: number
+  ): void {
+    const outline = global.scene.createSceneObject("CircuitSelectionOutline")
+    outline.setParent(parent)
+    const visual = outline.createComponent("Component.RenderMeshVisual") as RenderMeshVisual
+    visual.mesh = this.createRoundedSelectionMesh(width, height, thickness, radius)
+    visual.mainMaterial = CIRCUIT_SELECTION_MATERIAL.clone()
+    visual.mainMaterial.mainPass.baseColor = CIRCUIT_SELECTION_COLOR
+    visual.mainMaterial.mainPass.depthTest = false
+    visual.mainMaterial.mainPass.twoSided = true
+    visual.setRenderOrder(13)
+  }
+
+  private setSelectionRingColor(ring: SceneObject, color: vec4): void {
+    for (let i = 0; i < ring.getChildrenCount(); i++) {
+      const edge = ring.getChild(i)
+      const visual = edge.getComponent("Component.RenderMeshVisual") as RenderMeshVisual
+      if (visual && visual.mainMaterial) {
+        visual.mainMaterial.mainPass.baseColor = color
+      }
+    }
+  }
+
+  private createRoundedSelectionMesh(
+    width: number,
+    height: number,
+    thickness: number,
+    radius: number
+  ): RenderMesh {
+    const outerRadius = Math.max(thickness, Math.min(radius, Math.min(width, height) * 0.5))
+    const innerRadius = Math.max(0.01, outerRadius - thickness)
+    const outer = this.createRoundedRectLoop(width, height, outerRadius)
+    const inner = this.createRoundedRectLoop(
+      Math.max(thickness, width - thickness * 2),
+      Math.max(thickness, height - thickness * 2),
+      innerRadius
+    )
+    const builder = new MeshBuilder([
+      {name: "position", components: 3},
+      {name: "normal", components: 3},
+    ])
+    builder.topology = MeshTopology.Triangles
+    builder.indexType = MeshIndexType.UInt16
+
+    const vertices: number[] = []
+    for (const point of outer) {
+      vertices.push(point.x, point.y, 0, 0, 0, 1)
+    }
+    for (const point of inner) {
+      vertices.push(point.x, point.y, 0, 0, 0, 1)
+    }
+    builder.appendVerticesInterleaved(vertices)
+
+    const indices: number[] = []
+    const count = outer.length
+    for (let i = 0; i < count; i++) {
+      const next = (i + 1) % count
+      const outerA = i
+      const outerB = next
+      const innerA = i + count
+      const innerB = next + count
+      indices.push(outerA, outerB, innerB, outerA, innerB, innerA)
+    }
+    builder.appendIndices(indices)
+    builder.updateMesh()
+    return builder.getMesh()
+  }
+
+  private createRoundedRectLoop(
+    width: number,
+    height: number,
+    radius: number
+  ): vec2[] {
+    const points: vec2[] = []
+    const halfWidth = width * 0.5
+    const halfHeight = height * 0.5
+    const safeRadius = Math.max(0.01, Math.min(radius, halfWidth, halfHeight))
+    const centers = [
+      new vec2(halfWidth - safeRadius, halfHeight - safeRadius),
+      new vec2(-halfWidth + safeRadius, halfHeight - safeRadius),
+      new vec2(-halfWidth + safeRadius, -halfHeight + safeRadius),
+      new vec2(halfWidth - safeRadius, -halfHeight + safeRadius),
+    ]
+    const startAngles = [0, 90, 180, 270]
+    for (let corner = 0; corner < centers.length; corner++) {
+      const center = centers[corner]
+      for (let segment = 0; segment <= CIRCUIT_SELECTION_CORNER_SEGMENTS; segment++) {
+        if (corner > 0 && segment === 0) continue
+        const degrees =
+          startAngles[corner] +
+          (segment / CIRCUIT_SELECTION_CORNER_SEGMENTS) * 90
+        const radians = degrees * MathUtils.DegToRad
+        points.push(
+          new vec2(
+            center.x + Math.cos(radians) * safeRadius,
+            center.y + Math.sin(radians) * safeRadius
+          )
+        )
+      }
+    }
+    return points
   }
 
   private createCircuitBadgeButton(
@@ -799,6 +979,41 @@ export class InAreaScreen {
     return null
   }
 
+  private refreshVoiceNoteControls(): void {
+    const state = this.voiceState
+    if (!state) return
+
+    if (this.voiceTextComp) {
+      this.voiceTextComp.text = state.label
+      this.voiceTextComp.size = CIRCUIT_EDIT_BUTTON_FONT_SIZE
+      this.voiceTextComp.textFill.color = state.recording
+        ? new vec4(1, 0.92, 0.45, 1)
+        : state.hasVoice
+          ? new vec4(0.72, 0.95, 1, 1)
+          : new vec4(1, 1, 1, 1)
+    }
+
+    if (this.voiceButton) {
+      ;(this.voiceButton as any)._style = state.recording
+        ? "Primary"
+        : state.hasVoice
+          ? "Primary"
+          : "PrimaryNeutral"
+      this.voiceButton.inactive =
+        !this.areaReady || this.followActive || !this.createModeActive
+    }
+
+    if (this.voiceStatusComp) {
+      this.voiceStatusComp.text = state.status
+      this.voiceStatusComp.size = state.status.length > 70 ? 19 : 22
+      this.voiceStatusComp.textFill.color = state.recording
+        ? new vec4(1, 0.9, 0.35, 1)
+        : state.configured
+          ? new vec4(0.72, 0.95, 1, 0.95)
+          : new vec4(1, 0.7, 0.35, 0.95)
+    }
+  }
+
   private applyButtonAvailability(): void {
     const disabledColor = new vec4(0.62, 0.66, 0.7, 0.72)
     const enabledColor = new vec4(1, 1, 1, 1)
@@ -838,6 +1053,8 @@ export class InAreaScreen {
           ? disabledColor
           : enabledColor
     }
+
+    this.refreshVoiceNoteControls()
   }
 
 }

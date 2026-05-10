@@ -22,7 +22,7 @@ metaInfo:
   lensClientCompatibilities:
     - Spectacles
   platformBundlesEnabled: false
-  iconHash: ""
+  iconHash: 9466706bc9bfac5f4c2535d1c6bb75f4
   videoPreviewHash: ""
   fromTemplateName: Spatial Anchors
   fromTemplateUrl: Lens Studio 5.15.4.26022322

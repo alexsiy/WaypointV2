@@ -32,6 +32,9 @@
     noteWidgetPrefab: false
     photoWidgetPrefab: false
     rootContainer: false
+    voiceAudioOutput: false
+    voiceMicrophoneAsset: false
+    voiceNoteMaxSeconds: false
     watchWidgetPrefab: false
     widgetParent: false
     worldQueryModule: false
@@ -51,6 +54,9 @@
       noteWidgetPrefab: !<reference.ObjectPrefab> 00000000-0000-0000-0000-000000000000
       watchWidgetPrefab: !<reference.ObjectPrefab> 00000000-0000-0000-0000-000000000000
       photoWidgetPrefab: !<reference.ObjectPrefab> 00000000-0000-0000-0000-000000000000
+      voiceMicrophoneAsset: !<reference.AudioTrackAsset> 00000000-0000-0000-0000-000000000000
+      voiceAudioOutput: !<reference.AudioTrackAsset> 00000000-0000-0000-0000-000000000000
+      voiceNoteMaxSeconds: !<float> 20.000000
       enableLogging: false
       enableLoggingLifecycle: false
   ScriptTypes:
@@ -69,6 +75,11 @@
     - '// @input Asset.ObjectPrefab noteWidgetPrefab {"hint":"Prefab for Note Widget (scene object with NoteWidget script)"}'
     - '// @input Asset.ObjectPrefab watchWidgetPrefab {"hint":"Prefab for Watch Widget (scene object with WatchWidget script)"}'
     - '// @input Asset.ObjectPrefab photoWidgetPrefab {"hint":"Prefab for Photo Widget (scene object with PhotoWidget script)"}'
+    - '// @ui {"widget":"separator"}'
+    - '// @ui {"widget":"label", "label":"<span style=\"color: #60A5FA;\">Voice Notes</span>"}'
+    - '// @input Asset.AudioTrackAsset voiceMicrophoneAsset {"hint":"Required Audio From Microphone asset. Keep wired so Spectacles declares microphone permission."}'
+    - '// @input Asset.AudioTrackAsset voiceAudioOutput {"hint":"Required Audio Output asset for voice guide playback."}'
+    - '// @input float voiceNoteMaxSeconds = 20 {"hint":"Maximum seconds per recorded step voice guide"}'
     - '// @ui {"widget":"separator"}'
     - '// @ui {"widget":"label", "label":"<span style=\"color: #60A5FA;\">Logging</span>"}'
     - '// @input bool enableLogging {"hint":"Enable general logging"}'

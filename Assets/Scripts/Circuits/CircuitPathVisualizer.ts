@@ -1,7 +1,7 @@
 import {Logger} from "Utilities.lspkg/Scripts/Utils/Logger"
 import {CircuitStepMeta} from "./CircuitTypes"
 
-const GUIDE_MATERIAL = requireAsset("../../Materials/WidgetSelectionUIBackground.mat") as Material
+const GUIDE_MATERIAL = requireAsset("Materials/WidgetSelectionUIBackground.mat") as Material
 
 const ACTIVE_COLOR = new vec4(1, 0.86, 0.22, 0.95)
 const VISITED_COLOR = new vec4(0.42, 0.96, 0.98, 0.84)

@@ -2548,7 +2548,7 @@
   Enabled: true
   ScriptAsset: !<reference> 5e6abcb8-32f0-4b7d-83fb-2ba54944368b
   ScriptInputsDefault:
-    {}
+    voiceNoteMaxSeconds: true
   ScriptTypesDefault:
     {}
   ScriptInputs:
@@ -2560,6 +2560,9 @@
       noteWidgetPrefab: !<reference.ObjectPrefab> 001e0bbb-4cde-4f9e-a45d-99494164275c
       watchWidgetPrefab: !<reference.ObjectPrefab> 483b304f-60a8-41a6-9990-69dc2e7ae596
       photoWidgetPrefab: !<reference.ObjectPrefab> 7b62f455-086b-4c0e-8d9c-872e961a9697
+      voiceMicrophoneAsset: !<reference.AudioTrackAsset> 86ac5ad5-a57e-491e-a34b-df40f3a0eec8
+      voiceAudioOutput: !<reference.AudioTrackAsset> 834e0d2c-9bec-4521-b9e3-a09e9d4a091d
+      voiceNoteMaxSeconds: !<float> 20.000000
       enableLogging: true
       enableLoggingLifecycle: true
   ScriptTypes:

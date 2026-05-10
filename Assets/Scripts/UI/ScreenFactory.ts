@@ -7,6 +7,7 @@ import {InCaptureScreen} from "./Screens/InCaptureScreen"
 import {MyAreasScreen} from "./Screens/MyAreasScreen"
 import {InAreaScreen} from "./Screens/InAreaScreen"
 import {AreaInfo} from "./Components/AreaGridBuilder"
+import {VoiceNoteUiState} from "../Audio/VoiceNoteController"
 
 /**
  * Orchestrates construction of all 5 screens.
@@ -156,6 +157,12 @@ export class ScreenFactory {
   setCreateMode(active: boolean, circuitIndex: number): void {
     if (this.inAreaScreen) {
       this.inAreaScreen.setCreateMode(active, circuitIndex)
+    }
+  }
+
+  setVoiceNoteState(state: VoiceNoteUiState): void {
+    if (this.inAreaScreen) {
+      this.inAreaScreen.setVoiceNoteState(state)
     }
   }
 

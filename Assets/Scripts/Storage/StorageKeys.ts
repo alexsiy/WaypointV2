@@ -26,6 +26,9 @@ export const LAST_AREA_KEY: string = "LAST_AREA_KEY"
 /** Sub-key for the last selected story/circuit within an area. */
 export const LAST_CIRCUIT_KEY: string = "LAST_CIRCUIT_KEY"
 
+/** Sub-key prefix for persisted voice guide sample buffers. */
+export const VOICE_NOTE_KEY: string = "VOICE_NOTE_KEY"
+
 /**
  * Returns the storage key prefix scoped to a specific area.
  * @param areaName - The human-readable area/space name.
@@ -68,4 +71,23 @@ export function lastAreaKey(): string {
  */
 export function lastCircuitKey(areaName: string): string {
   return `${STORAGE_PREFIX}_${areaName}_${LAST_CIRCUIT_KEY}`
+}
+
+/**
+ * Returns the storage key prefix for all voice notes in an area.
+ * @param areaName - The area name.
+ * @returns Prefix shared by every voice note in that area.
+ */
+export function voiceNotePrefix(areaName: string): string {
+  return `${STORAGE_PREFIX}_${areaName}_${VOICE_NOTE_KEY}`
+}
+
+/**
+ * Returns the storage key for one persisted voice note sample buffer.
+ * @param areaName - The area name.
+ * @param voiceId - Stable voice note id stored on the NoteWidget.
+ * @returns Fully-qualified key for that voice buffer.
+ */
+export function voiceNoteKey(areaName: string, voiceId: string): string {
+  return `${voiceNotePrefix(areaName)}_${voiceId}`
 }

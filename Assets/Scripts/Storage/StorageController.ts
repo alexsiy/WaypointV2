@@ -13,6 +13,8 @@ import {
   TYPE_KEY,
   CONTENT_KEY,
   ANCHOR_POSE_KEY,
+  voiceNoteKey,
+  voiceNotePrefix,
 } from "./StorageKeys"
 
 /**
@@ -229,10 +231,99 @@ export class StorageController {
       this.persistentStorage.remove(widgetKey(areaName, CONTENT_KEY))
       this.persistentStorage.remove(widgetKey(areaName, ANCHOR_POSE_KEY))
       this.persistentStorage.remove(lastCircuitKey(areaName))
+      this.clearVoiceNotes(areaName)
       this.logger.info(`Cleared widgets for area "${areaName}"`)
     } catch (e) {
       this.logger.error(`Error clearing widgets: ${e}`)
     }
+  }
+
+  // -------------------------------------------------------
+  // Voice notes
+  // -------------------------------------------------------
+
+  /** Persists voice-note samples in compact PCM16 form for a specific area. */
+  saveVoiceNote(areaName: string, voiceId: string, samples: any): boolean {
+    try {
+      const encoded = this.encodeVoiceSamples(samples)
+      this.persistentStorage.putInt16Array(voiceNoteKey(areaName, voiceId), encoded)
+      this.logger.info(
+        `Saved voice note "${voiceId}" for "${areaName}" (${encoded.length} samples)`
+      )
+      return true
+    } catch (e) {
+      this.logger.error(`Error saving voice note: ${e}`)
+      return false
+    }
+  }
+
+  /** Loads a voice-note sample buffer as Float32 audio, or null if none exists. */
+  loadVoiceNote(areaName: string, voiceId: string): Float32Array | null {
+    const key = voiceNoteKey(areaName, voiceId)
+    try {
+      if (!this.persistentStorage.has(key)) {
+        return null
+      }
+      const encoded = this.persistentStorage.getInt16Array(key)
+      if (encoded && encoded.length > 0) {
+        return this.decodeVoiceSamples(encoded)
+      }
+    } catch (e) {
+      this.logger.warn(`PCM16 voice note load failed, trying legacy Float32: ${e}`)
+    }
+
+    try {
+      const legacySamples = this.persistentStorage.getFloat32Array(key)
+      return legacySamples && legacySamples.length > 0 ? legacySamples : null
+    } catch (e) {
+      this.logger.error(`Error loading voice note: ${e}`)
+      return null
+    }
+  }
+
+  /** Removes one persisted voice note. */
+  deleteVoiceNote(areaName: string, voiceId: string): void {
+    try {
+      this.persistentStorage.remove(voiceNoteKey(areaName, voiceId))
+    } catch (e) {
+      this.logger.error(`Error deleting voice note: ${e}`)
+    }
+  }
+
+  /** Removes every persisted voice note for the area. */
+  clearVoiceNotes(areaName: string): void {
+    try {
+      const prefix = voiceNotePrefix(areaName)
+      const keys = this.persistentStorage.getAllKeys()
+      for (const key of keys) {
+        if (key.indexOf(prefix) === 0) {
+          this.persistentStorage.remove(key)
+        }
+      }
+    } catch (e) {
+      this.logger.error(`Error clearing voice notes: ${e}`)
+    }
+  }
+
+  private encodeVoiceSamples(samples: any): Int16Array {
+    if (samples instanceof Int16Array) {
+      return samples
+    }
+
+    const encoded = new Int16Array(samples.length)
+    for (let i = 0; i < samples.length; i++) {
+      const clamped = Math.max(-1, Math.min(1, samples[i] ?? 0))
+      encoded[i] = Math.round(clamped * 32767)
+    }
+    return encoded
+  }
+
+  private decodeVoiceSamples(samples: Int16Array): Float32Array {
+    const decoded = new Float32Array(samples.length)
+    for (let i = 0; i < samples.length; i++) {
+      decoded[i] = samples[i] / 32768.0
+    }
+    return decoded
   }
 
   // -------------------------------------------------------

@@ -23,11 +23,30 @@ export interface NoteObjectFrameData {
   size: NoteObjectFrameVec2Data
 }
 
+export interface NoteVoiceFrameShapeData {
+  x: number
+  y: number
+  z: number
+}
+
+export interface NoteVoiceData {
+  id: string
+  durationSec: number
+  sampleRate: number
+  sampleCount: number
+  storageVersion?: number
+  frameSizes?: number[]
+  frameShapes?: NoteVoiceFrameShapeData[]
+  recordedAt: number
+  stored: boolean
+}
+
 interface NoteData {
   text: string
   circuit?: CircuitStepMeta
   minimized?: boolean
   objectFrame?: NoteObjectFrameData
+  voice?: NoteVoiceData
 }
 
 const NOTE_MIN_SIZE = new vec2(15, 9.5)
@@ -74,6 +93,7 @@ export class NoteWidget extends WidgetBase {
   private editingEnabled: boolean = true
   private minimized: boolean = false
   private objectFrame: NoteObjectFrameData | null = null
+  private voiceNote: NoteVoiceData | null = null
   private minimizeButton: RectangleButton | null = null
   private minimizeButtonObject: SceneObject | null = null
   private minimizeButtonText: Text | null = null
@@ -138,6 +158,9 @@ export class NoteWidget extends WidgetBase {
     if (this.objectFrame) {
       data.objectFrame = this.objectFrame
     }
+    if (this.voiceNote) {
+      data.voice = this.getCompactVoiceNoteData(this.voiceNote)
+    }
     return JSON.stringify(data)
   }
 
@@ -148,6 +171,7 @@ export class NoteWidget extends WidgetBase {
       this.circuitStep = data.circuit ?? null
       this.minimized = false
       this.objectFrame = data.objectFrame ?? null
+      this.voiceNote = data.voice ?? null
       if (this.textComponent) {
         this.textComponent.text = this.getDisplayText()
         this.applyResponsiveLayout()
@@ -198,6 +222,42 @@ export class NoteWidget extends WidgetBase {
     if (emitChange) {
       this.emitContentChange()
     }
+  }
+
+  getVoiceNoteData(): NoteVoiceData | null {
+    return this.voiceNote
+  }
+
+  setVoiceNoteData(
+    data: NoteVoiceData | null,
+    emitChange: boolean = true
+  ): void {
+    this.voiceNote = data
+    if (emitChange) {
+      this.emitContentChange()
+    }
+  }
+
+  hasVoiceNote(): boolean {
+    return this.voiceNote !== null
+  }
+
+  private getCompactVoiceNoteData(voice: NoteVoiceData): NoteVoiceData {
+    const compact: NoteVoiceData = {
+      id: voice.id,
+      durationSec: voice.durationSec,
+      sampleRate: voice.sampleRate,
+      sampleCount: voice.sampleCount,
+      storageVersion: voice.storageVersion ?? 1,
+      recordedAt: voice.recordedAt,
+      stored: voice.stored,
+    }
+
+    if (voice.frameShapes && voice.frameShapes.length > 0) {
+      compact.frameShapes = voice.frameShapes
+    }
+
+    return compact
   }
 
   applyCompactLayout(): void {
